@@ -196,6 +196,8 @@ def save_csv(df, folder_name, file_name):
     remote_path = os.path.join(os.path.dirname(os.getcwd()), folder_name)    
     df.to_csv(os.path.join(remote_path, file_name))
 
+# TODO make the below a class, specify radius, n_systems, etc
+# the GP class should then have a method to call upon this data
 
 def find_nearby_systems(df_location, lat, lon, radius):
     """
@@ -294,62 +296,3 @@ def create_spatiotemporal_grid(X, Y):
     Y_grid = Y_unique.reshape(grid_shape[:-1] + (1, ))
     
     return unique_time[:, None], R_grid, Y_grid
-
-if __name__ == '__main__':
-    # Set the parameters
-    THRESHOLD = 0.05
-    DAY_MIN = 8
-    DAY_MAX = 16
-    N_SYSTEMS = 10
-    # RADIUS = 0.5
-    
-    # load data
-    df_location = load_data('data', 'system_location.csv')
-    df_pv = load_data('data', 'pv.netcdf')
-
-    # set index of location data to ss_id
-    df_location = set_index(df_location)
-
-    # align pv systems to locations from metadata and the pv data
-    df_location, df_pv = align_pv_systems(df_location, df_pv)
-
-    # scale by capacity
-    df_pv = scale_by_capacity(df_pv, df_location)
-
-    # drop systems producing over night
-    df_pv = drop_night_production(df_pv)
-
-    # get daily production from 8am to 4pm
-    df_pv = daily_production(df_pv, 8, 16)
-
-    # remove systems with zero production for more than 5 percent of the time
-    df_pv = remove_zero_production(df_pv, 0.05)
-
-
-    df_pv['datetime'] = df_pv.index
-    df_pv = df_pv.reset_index(drop=True)
-
-    df_location, df_pv = align_pv_systems(df_pv=df_pv,
-                                          df_location=df_location)
-
-    # save pv data & location data
-    save_csv(df_pv, 'data', 'pv_data_clean.csv')
-    save_csv(df_location, 'data', 'location_data_clean.csv')
-
-    # set datetime to column and reindex to range from 0 to len(df_pv)
-    df_pv['datetime'] = df_pv.index
-    df_pv = df_pv.reset_index(drop=True)
-
-    lats, longs = get_location_maps(df_location, N_SYSTEMS)
-
-    # list of strings of pv farms
-    pvs = [float(pv) for pv in lats.keys()]
-    df_pv = df_pv[['datetime'] + pvs]
-    df_pv = df_pv[['datetime'] + list(lats.keys())]
-
-    # list of strings of pv farms
-    pvs = [float(pv) for pv in lats.keys()]
-    df_pv = df_pv[['datetime'] + pvs]
-    df_stacked = stack_dataframe(df_pv, lats, longs)
-
-    save_csv(df_stacked, 'data', 'pv_data_stacked.csv')
