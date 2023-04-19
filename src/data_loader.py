@@ -246,6 +246,7 @@ def stack_dataframe(df_pv, lats_map, longs_map):
     return df_stacked
 
 # TODO add support for exogenous regressors
+# TODO ensure this supports grid format for GPyTorch
 def create_spatiotemporal_grid(X, Y):
     """
     Create a spatiotemporal grid from a set of spatial points and a set of times.
