@@ -4,11 +4,6 @@ import os
 import xarray as xr
 import datetime
 import time
-<<<<<<< HEAD
-
-=======
->>>>>>> e2f5723 (updated loader script, todo fix index of stack)
-
 
 def load_data(folder_name, file_name):
     """ 
@@ -20,19 +15,22 @@ def load_data(folder_name, file_name):
     
     Returns:
         data (xarray): data
-    """
-    
-    assert file_name in os.listdir(folder_name), f'{file_name} not in {folder_name}'
-    
-    data_path = os.path.join(os.getcwd(), folder_name)
+    """    
+    # get path to the remote data
+    remote_path = os.path.join(os.path.dirname(os.getcwd()), folder_name)
+    # check that file is in the remote path
+    assert file_name in os.listdir(remote_path)
+    file_path = os.path.join(remote_path, file_name)
     
     print('==> Loading data')
+    
     tic = time.time()
+    
     if file_name.endswith('.csv'):
-        df = pd.read_csv(os.path.join(data_path, file_name))    
+        df = pd.read_csv(file_path)    
     
     elif  file_name.endswith('.netcdf'):
-        df = xr.open_dataset(os.path.join(data_path, file_name), engine='h5netcdf').to_dataframe()
+        df = xr.open_dataset(file_path, engine='h5netcdf').to_dataframe()
         df = df.dropna(axis='columns', how='all')
         df = df.clip(lower=0, upper=5e7)
     
@@ -194,8 +192,10 @@ def save_csv(df, folder_name, file_name):
         folder_name (str): folder
         file_name (str): file name
     """
-    data_path = os.path.join(os.getcwd(), folder_name)
-    df.to_csv(os.path.join(data_path, file_name))
+    
+    remote_path = os.path.join(os.path.dirname(os.getcwd()), folder_name)    
+    df.to_csv(os.path.join(remote_path, file_name))
+
 
 def find_nearby_systems(df_location, lat, lon, radius):
     """
@@ -228,15 +228,7 @@ def stack_dataframe(df_pv, lats_map, longs_map):
         df_stacked (pd.DataFrame): stacked data frame
     """
     assert 'datetime' in df_pv.columns, 'datetime column not found'
-<<<<<<< HEAD
-<<<<<<< HEAD
 
-=======
-    
->>>>>>> e2f5723 (updated loader script, todo fix index of stack)
-=======
-
->>>>>>> 20a65b3 (loading for stacked systems)
     df_stacked = pd.DataFrame()
 
     for column in df_pv.drop(columns=['datetime']).columns:
@@ -251,10 +243,6 @@ def stack_dataframe(df_pv, lats_map, longs_map):
 
     return df_stacked
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 20a65b3 (loading for stacked systems)
 # TODO add support for exogenous regressors
 def create_spatiotemporal_grid(X, Y):
     """
@@ -307,12 +295,6 @@ def create_spatiotemporal_grid(X, Y):
     
     return unique_time[:, None], R_grid, Y_grid
 
-<<<<<<< HEAD
-=======
->>>>>>> e2f5723 (updated loader script, todo fix index of stack)
-=======
->>>>>>> 20a65b3 (loading for stacked systems)
-
 if __name__ == '__main__':
     # Set the parameters
     THRESHOLD = 0.05
@@ -343,21 +325,13 @@ if __name__ == '__main__':
     # remove systems with zero production for more than 5 percent of the time
     df_pv = remove_zero_production(df_pv, 0.05)
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 20a65b3 (loading for stacked systems)
+
     df_pv['datetime'] = df_pv.index
     df_pv = df_pv.reset_index(drop=True)
 
     df_location, df_pv = align_pv_systems(df_pv=df_pv,
                                           df_location=df_location)
 
-<<<<<<< HEAD
-=======
->>>>>>> e2f5723 (updated loader script, todo fix index of stack)
-=======
->>>>>>> 20a65b3 (loading for stacked systems)
     # save pv data & location data
     save_csv(df_pv, 'data', 'pv_data_clean.csv')
     save_csv(df_location, 'data', 'location_data_clean.csv')
@@ -368,26 +342,14 @@ if __name__ == '__main__':
 
     lats, longs = get_location_maps(df_location, N_SYSTEMS)
 
-    print(f"Location Farms: {list(lats.keys())}\n")
-    print(f"PV Farms: {list(df_pv.drop(columns=['datetime']).columns)}\n")
-
-    print(f"Location DF dtypes: {df_location.dtypes}\n")
-    print(f"PV DF dtypes: {df_pv.dtypes}\n")
-
-<<<<<<< HEAD
-<<<<<<< HEAD
     # list of strings of pv farms
     pvs = [float(pv) for pv in lats.keys()]
     df_pv = df_pv[['datetime'] + pvs]
-=======
     df_pv = df_pv[['datetime'] + list(lats.keys())]
->>>>>>> e2f5723 (updated loader script, todo fix index of stack)
-=======
+
     # list of strings of pv farms
     pvs = [float(pv) for pv in lats.keys()]
     df_pv = df_pv[['datetime'] + pvs]
->>>>>>> 20a65b3 (loading for stacked systems)
-
     df_stacked = stack_dataframe(df_pv, lats, longs)
 
     save_csv(df_stacked, 'data', 'pv_data_stacked.csv')
