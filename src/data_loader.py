@@ -297,4 +297,3 @@ def create_spatiotemporal_grid(X, Y):
     Y_grid = Y_unique.reshape(grid_shape[:-1] + (1, ))
     
     return unique_time[:, None], R_grid, Y_grid
-
