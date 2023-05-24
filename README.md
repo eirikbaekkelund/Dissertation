@@ -10,7 +10,7 @@ This project implements a nowcasting model for solar photovoltaic (PV) power gen
 - [Baseline Models](#baseline-models)
 - [Gaussian Process Regression](#gaussian-process-regression)
 - [Integration of Exogenous Variables](#integration-of-exogenous-variables)
-- [Ablation Study] (#ablation-study)
+- [Ablation Study](#ablation-study)
 - [Results and Analysis](#results-and-analysis)
 - [Conclusion](#conclusion)
 - [References](#references)
