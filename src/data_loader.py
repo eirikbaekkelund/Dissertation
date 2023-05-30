@@ -247,7 +247,7 @@ def stack_dataframe(df_pv, lats_map, longs_map):
     return df_stacked
 
 # TODO add support for exogenous regressors
-# TODO ensure this supports grid format for GPyTorch
+
 def create_spatiotemporal_grid(X, Y):
     """
     Create a spatiotemporal grid from a set of spatial points and a set of times.
@@ -319,7 +319,7 @@ def convert_grid_to_tensor(time, r_grid, y):
 
     return time_tensor, r_grid_tensor, y_tensor
 
-def extract_time_series(time, y):
+def extract_time_series(time, y, idx):
     """ 
     Extract time series from spatio temporal grid
 
@@ -332,7 +332,7 @@ def extract_time_series(time, y):
         y_series (np.ndarray): target series
     """
     time_series = time[:, 0].squeeze(-1)
-    y_series = y[:, 0, 0].squeeze(-1)
+    y_series = y[:, idx, 0].squeeze(-1)
 
     return time_series, y_series
 
