@@ -63,15 +63,16 @@ class ExactGPModel(gpytorch.models.ExactGP):
             raise ValueError('optim must be Adam or SGD')
         
         mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self)
+       
         for i in range(n_iter):
+            
             optimizer.zero_grad()
+            
             output = self(self.train_x)
             loss = -mll(output, self.train_y)
             loss.backward()
+            
             optimizer.step()
+            
             if i % 100 == 0:
                 print('Iter %d/%d - Loss: %.3f' % (i + 1, n_iter, loss.item()))
-<<<<<<< HEAD
-
-=======
->>>>>>> 0201744 (exact gp model)
