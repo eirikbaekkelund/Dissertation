@@ -1,4 +1,5 @@
 import numpy as np
+import torch
 import pandas as pd
 import os
 import xarray as xr
@@ -296,4 +297,67 @@ def create_spatiotemporal_grid(X, Y):
     R_grid = X_unique[:, 1:].reshape(grid_shape)
     Y_grid = Y_unique.reshape(grid_shape[:-1] + (1, ))
     
-    return unique_time[:, None], R_grid, Y_grid
+    return unique_time[:, None], R_grid, Y_grid    
+
+def convert_grid_to_tensor(time, r_grid, y):
+    """ 
+    Convert spatio temporal grid to tensor
+
+    Args:
+        time (np.ndarray): time grid
+        r (np.ndarray): spatial grid
+        y (np.ndarray): target grid
+    
+    Returns:
+        time (torch.tensor): time grid
+        r (torch.tensor): spatial grid
+        y (torch.tensor): target grid
+    """
+    time_tensor = torch.from_numpy(time).float()
+    r_grid_tensor = torch.from_numpy(r_grid).float()
+    y_tensor = torch.from_numpy(y).float()
+
+    return time_tensor, r_grid_tensor, y_tensor
+
+def extract_time_series(time, y):
+    """ 
+    Extract time series from spatio temporal grid
+
+    Args:
+        time (np.ndarray): time grid
+        y (np.ndarray): target grid
+    
+    Returns:
+        time_series (np.ndarray): time series
+        y_series (np.ndarray): target series
+    """
+    time_series = time[:, 0].squeeze(-1)
+    y_series = y[:, 0, 0].squeeze(-1)
+
+    return time_series, y_series
+
+
+def train_test_split(X, y, minute_interval=5, n_hours=8):
+    """ 
+    Splits the data into train and test sets.
+    The test set is the last n_hours of the data.
+
+    Args:
+        X (torch.tensor): input data
+        y (torch.tensor): target data
+        minute_interval (int): interval between data points in minutes
+        n_hours (int): number of hours to use for test set
+    """
+    assert X.shape[0] == y.shape[0], 'X and y must have the same number of rows'
+
+    # number of data points in n_hours
+    n_points = int(n_hours * 60 / minute_interval)
+
+    # split data into train and test sets
+    X_train = X[:-n_points]
+    y_train = y[:-n_points]
+    X_test = X[-n_points:]
+    y_test = y[-n_points:]
+
+    return X_train, y_train, X_test, y_test
+

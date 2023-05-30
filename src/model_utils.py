@@ -8,9 +8,9 @@ class ExactGPModel(gpytorch.models.ExactGP):
     Args:
         train_x (torch.Tensor): training data
         train_y (torch.Tensor): training labels
-        likelihood (gpytorch.likelihoods): likelihood
-        mean_module (gpytorch.means): mean module
-        covar_module (gpytorch.kernels): covariance module
+        likelihood (gpytorch.likelihoods.Likelihood): likelihood
+        mean_module (gpytorch.means.Mean): mean module
+        covar_module (gpytorch.kernels.Kernel): covariance module
     """
     def __init__(self, 
                  train_x, 
@@ -22,7 +22,8 @@ class ExactGPModel(gpytorch.models.ExactGP):
         super(ExactGPModel, self).__init__(train_x, 
                                            train_y, 
                                            likelihood)
-        
+        self.train_x = train_x
+        self.train_y = train_y
         self.mean_module = mean_module
         self.covar_module = covar_module
     
@@ -41,8 +42,8 @@ class ExactGPModel(gpytorch.models.ExactGP):
         covar_x = self.covar_module(x)
         
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
-    
-    def train(self, n_iter, lr, optim):
+
+    def _train(self, n_iter, lr, optim):
         """
         Train the GP model
 
@@ -76,3 +77,4 @@ class ExactGPModel(gpytorch.models.ExactGP):
             
             if i % 100 == 0:
                 print('Iter %d/%d - Loss: %.3f' % (i + 1, n_iter, loss.item()))
+
