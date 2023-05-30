@@ -71,4 +71,7 @@ class ExactGPModel(gpytorch.models.ExactGP):
             optimizer.step()
             if i % 100 == 0:
                 print('Iter %d/%d - Loss: %.3f' % (i + 1, n_iter, loss.item()))
+<<<<<<< HEAD
 
+=======
+>>>>>>> 0201744 (exact gp model)
