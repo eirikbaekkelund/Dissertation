@@ -337,7 +337,7 @@ def extract_time_series(time, y, idx):
     return time_series, y_series
 
 
-def train_test_split(X, y, minute_interval=5, n_hours=8):
+def train_test_split_1d(X, y, minute_interval=5, n_hours=8):
     """ 
     Splits the data into train and test sets.
     The test set is the last n_hours of the data.
@@ -357,6 +357,30 @@ def train_test_split(X, y, minute_interval=5, n_hours=8):
     X_train = X[:-n_points]
     y_train = y[:-n_points]
     X_test = X[-n_points:]
+    y_test = y[-n_points:]
+
+    return X_train, y_train, X_test, y_test
+
+def train_test_split_Nd(X, y, minute_interval=5, n_hours=8):
+    """ 
+    Splits the data into train and test sets.
+    The test set is the last n_hours of the data.
+
+    Args:
+        X (torch.tensor): input data
+        y (torch.tensor): target data
+        minute_interval (int): interval between data points in minutes
+        n_hours (int): number of hours to use for test set
+    """
+    assert X.shape[0] == y.shape[0], 'X and y must have the same number of rows'
+
+    # number of data points in n_hours
+    n_points = int(n_hours * 60 / minute_interval)
+
+    # split data into train and test sets
+    X_train = X[:-n_points, :]
+    y_train = y[:-n_points]
+    X_test = X[-n_points:, :]
     y_test = y[-n_points:]
 
     return X_train, y_train, X_test, y_test

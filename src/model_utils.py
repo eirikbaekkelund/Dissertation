@@ -1,6 +1,8 @@
 import torch
 import gpytorch
 
+# TODO make Beta likelihood work (possibly inherit from ExactGP)
+
 class ExactGPModel(gpytorch.models.ExactGP):
     """ 
     Class for exact GP model.
@@ -78,3 +80,21 @@ class ExactGPModel(gpytorch.models.ExactGP):
             if i % 100 == 0:
                 print('Iter %d/%d - Loss: %.3f' % (i + 1, n_iter, loss.item()))
 
+    def predict(self, x_test):
+        """ 
+        Make prediction on test data
+
+        Args:
+            x_test (torch.Tensor): test data
+        
+        Returns:
+            preds_test (torch.Tensor): predicted mean test
+        """
+        self.eval()
+        self.likelihood.eval()
+        
+        with torch.no_grad():
+            preds_test = self.likelihood(self(x_test))
+            preds_train = self.likelihood(self(self.train_x))
+        
+        return preds_test, preds_train
