@@ -247,6 +247,7 @@ def stack_dataframe(df_pv, lats_map, longs_map):
     return df_stacked
 
 # TODO add support for exogenous regressors
+# TODO make shapes not adding a new dimension
 
 def create_spatiotemporal_grid(X, Y):
     """
