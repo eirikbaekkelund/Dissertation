@@ -98,3 +98,4 @@ class ExactGPModel(gpytorch.models.ExactGP):
             preds_train = self.likelihood(self(self.train_x))
         
         return preds_test, preds_train
+
