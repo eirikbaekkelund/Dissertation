@@ -1,9 +1,10 @@
 import torch
 import gpytorch
+from gpytorch.models import ExactGP, ApproximateGP
+from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy
 
-# TODO make Beta likelihood work (possibly inherit from ExactGP)
 
-class ExactGPModel(gpytorch.models.ExactGP):
+class ExactGPModel(ExactGP):
     """ 
     Class for exact GP model.
 
@@ -98,4 +99,18 @@ class ExactGPModel(gpytorch.models.ExactGP):
             preds_train = self.likelihood(self(self.train_x))
         
         return preds_test, preds_train
+    
 
+# TODO make Beta likelihood in a (Sparse) Variational GP model
+
+class ApproximateGPModel(ApproximateGP):
+    def __init__(self, inducing_points, variational_dist, mean_module, covar_module):
+        variational_distribution = CholeskyVariationalDistribution(inducing_points.size(0))
+        variational_strategy = VariationalStrategy(self, 
+                                                   inducing_points=inducing_points, 
+                                                   variational_distribution=variational_dist, 
+                                                   learn_inducing_locations=True)
+        super(ApproximateGPModel, self).__init__(variational_strategy)
+        self.mean_module = mean_module
+        self.covar_module = covar_module
+    
