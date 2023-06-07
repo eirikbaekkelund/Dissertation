@@ -12,25 +12,30 @@ def plot_grid(df, COORDS, RADIUS):
         COORDS (tuple): coordinates of the center of the circle
         RADIUS (float): radius of the circle
     """
-    fig, ax = plt.subplots(figsize=(10, 10))
+    _, ax = plt.subplots(figsize=(8, 8))
 
     # Create Basemap instance
-    map_uk = Basemap(llcrnrlon=-3, llcrnrlat=49, urcrnrlon=3, urcrnrlat=59, resolution='l', ax=ax)
+    map_uk = Basemap(llcrnrlon=-7, llcrnrlat=49, urcrnrlon=2, urcrnrlat=60, resolution='l', ax=ax)
 
     # Draw coastlines and country boundaries
     map_uk.drawcoastlines()
     map_uk.drawcountries()
 
+    # add some nice background colours
+    map_uk.fillcontinents(color='forestgreen', lake_color='lightblue', alpha=0.5)
+
     # Plot PV systems
     x, y = map_uk(df['longitude_noisy'].values, df['latitude_noisy'].values)
-    map_uk.scatter(x, y, alpha=0.2, color='b', label='PV systems')
+    map_uk.scatter(x, y, alpha=0.4, color='b', label='PV systems')
 
     # Draw a circle representing the desired area
     lon, lat = map_uk(COORDS[1], COORDS[0])
-    circle = plt.Circle((lon, lat), RADIUS, color='r', fill=True, alpha=0.2, label='Area')
+    circle = plt.Circle((lon, lat), RADIUS, color='r', fill=True, alpha=0.3, label='Selected Area')
     ax.add_patch(circle)
 
-    
+
+    ax.set_xticks(np.arange(-7, 3,))
+    ax.set_yticks(np.arange(49, 61))
 
     ax.set_xlabel('Longitude')
     ax.set_ylabel('Latitude')
@@ -38,7 +43,6 @@ def plot_grid(df, COORDS, RADIUS):
     ax.legend()
 
     plt.show()
-
 
 
 
@@ -101,4 +105,4 @@ def plot_acf_pacf(y):
         plot_pacf(y[:, i], ax=ax[1], alpha=0.2, lags=len(y) // 2 - 1, title='PACF', color='b', method='ywm')
     
     plt.xlabel('Lag')
-    plt.show(
+    plt.show()
