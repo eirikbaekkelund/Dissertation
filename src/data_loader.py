@@ -6,6 +6,10 @@ import xarray as xr
 import datetime
 import time
 
+#########################################################
+###############       PREPROCESSING       ###############
+#########################################################
+
 def load_data(folder_name, file_name):
     """ 
     Load data file from folder 
@@ -197,9 +201,6 @@ def save_csv(df, folder_name, file_name):
     remote_path = os.path.join(os.path.dirname(os.getcwd()), folder_name)    
     df.to_csv(os.path.join(remote_path, file_name))
 
-# TODO make the below a class, specify radius, n_systems, etc
-# the GP class should then have a method to call upon this data
-
 def find_nearby_systems(df_location, lat, lon, radius):
     """
     Find nearby systems by latitude and longitude
@@ -298,7 +299,18 @@ def create_spatiotemporal_grid(X, Y):
     R_grid = X_unique[:, 1:].reshape(grid_shape)
     Y_grid = Y_unique.reshape(grid_shape[:-1] + (1, ))
     
-    return unique_time[:, None], R_grid, Y_grid    
+    return unique_time[:, None], R_grid, Y_grid
+
+def remove_nan_systems(r_grid, y):
+    """
+    Remove systems that have NaN values
+    """
+    idx = np.argwhere(np.isnan(y))
+    idx = np.unique(idx[:, 1])
+    r_grid = np.delete(r_grid, idx, axis=1)
+    y = np.delete(y, idx, axis=1)
+    
+    return r_grid, y 
 
 def convert_grid_to_tensor(time, r_grid, y):
     """ 
@@ -386,3 +398,86 @@ def train_test_split_Nd(X, y, minute_interval=5, n_hours=8):
 
     return X_train, y_train, X_test, y_test
 
+#########################################################
+################       DATA LOADER       ################
+#########################################################
+
+class DataLoader:
+    def __init__(self,
+                 n_days : int,
+                 day_init : int, 
+                 minute_interval : int, 
+                 n_systems : int, 
+                 radius : float, 
+                 coords : tuple, 
+                 day_min : int, 
+                 day_max : int,
+                 folder_name : str,
+                 file_name_pv : str,
+                 file_name_location : str):
+        """
+        Data loader for the Temporal GP model
+
+        Args:
+            n_days (int): number of days to use
+            minute_interval (int): interval between data points in minutes
+            n_systems (int): number of systems to use
+            radius (float): radius in km
+            coords (tuple): coordinates of the center of the area
+        """
+        # load data for pv and location
+        df_pv = load_data(folder_name=folder_name, file_name=file_name_pv)
+        df_location = load_data(folder_name=folder_name, file_name=file_name_location)
+
+        # set index
+        df_location = set_index(df_location=df_location)
+        date_time = df_pv['datetime']
+        
+        # get systems in the area 
+        systems = find_nearby_systems(df_location=df_location, 
+                                           lat=coords[0], 
+                                           lon=coords[1], 
+                                           radius=radius)
+        
+        # update number of systems to use by the number of systems in the area
+        systems, pv_series = align_pv_systems(df_location=systems, df_pv=df_pv)
+        lats, longs = get_location_maps(df_location=systems, n_systems=n_systems)
+
+        # update index of pv_series
+        with pd.option_context('mode.chained_assignment', None):
+            pv_series['datetime'] = date_time
+        
+        n_daily_points = (day_max - day_min) * 60 // minute_interval
+        n_samples = int(n_daily_points * n_days)
+        
+        # get relevant sample of pv series
+        pv_series = pv_series.iloc[n_samples*day_init:n_samples*(day_init + 1), :n_systems]
+
+        # create stack of all systems
+        pv_series = stack_dataframe(df_pv=pv_series, lats_map=lats, longs_map=longs)
+
+        # save_csv(df=pv_series, folder_name=folder_name, file_name='pv_data_stack.csv')
+        
+        X = pv_series[['epoch', 'latitude', 'longitude']].values
+        y = pv_series['PV'].values
+
+        time, r_grid, y = create_spatiotemporal_grid(X, y)
+        
+        y = y.squeeze()
+        time = time.squeeze()
+
+        r_grid, y = remove_nan_systems(r_grid=r_grid, y=y)
+
+        self.time_tensor, self.r_grid_tensor, self.y_tensor = convert_grid_to_tensor(time=time, r_grid=r_grid, y=y)
+
+    def __len__(self):
+        return len(self.time_tensor)
+    
+    def __getitem__(self, idx):
+        return self.time_tensor[idx], self.r_grid_tensor[idx], self.y_tensor[idx]
+    
+    def get_time_series(self):
+        return self.time_tensor, self.y_tensor
+
+
+        
