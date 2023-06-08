@@ -44,52 +44,53 @@ def plot_grid(df, COORDS, RADIUS):
 
     plt.show()
 
-
-
-def plot_gp(pred_train, pred_test, time_train, time_test, y_train, y_test):
+def plot_gp(func):
     """
-    Plot the GP predictions
-
-    Args:
-        pred_train (gpytorch.distributions.MultivariateNormal): predicted mean and variance for the training data
-        pred_test (gpytorch.distributions.MultivariateNormal): predicted mean and variance for the test data
-        time_train (torch.Tensor): time for the training data
-        time_test (torch.Tensor): time for the test data
-        y_train (torch.Tensor): ground truth for the training data
-        y_test (torch.Tensor): ground truth for the test data
+    Decorator to plot the GP predictions
     """
-    plt.figure(figsize=(13, 5))
+    def wrapper(pred_train, pred_test, time_train, time_test, y_train, y_test):
+        """ 
+        Wrapper function to plot the GP predictions
 
-    plt.scatter(time_train, y_train, marker='x', color='black', alpha=0.7, label='Observed Data')
-    plt.scatter(time_test, y_test, marker='x', color='black', alpha=0.7)
+        Args:
+            pred_train (gpytorch.distributions.MultivariateNormal): GP model f(x) for the training data
+            pred_test (gpytorch.distributions.MultivariateNormal): GP model f(x) for the test data
+            time_train (torch.Tensor): time for the training data
+            time_test (torch.Tensor): time for the test data
+            y_train (torch.Tensor): PV production for the training data
+            y_test (torch.Tensor): PV production for the test data
+        
+        Returns:
+            wrapper (function): function to plot the GP predictions
+        """
+        plt.figure(figsize=(13, 5))
 
-    plt.plot(time_train, pred_train.mean, color='r', label='Mean')
+        plt.scatter(time_train, y_train, marker='x', color='black', alpha=0.7, label='Observed Data')
+        plt.scatter(time_test, y_test, marker='x', color='black', alpha=0.7)
 
-    lower, upper = pred_train.confidence_region()
-    # clip the lower and upper confidence region to avoid negative values and greater than 1
-    lower = np.clip(lower, 0, 1)
-    upper = np.clip(upper, 0, 1)
-    plt.fill_between(time_train, lower, upper, alpha=0.4, color='pink', label='Confidence')
+        func(pred_train, pred_test, time_train, time_test, y_train, y_test)
 
+        plt.legend()
 
+        plt.xlabel('Time (5 min intervals between 8am and 4pm)', fontsize=13)
+        plt.ylabel('PV Production (0-1 Scale)')
+
+        plt.show()
+    
+    return wrapper
+
+@plot_gp
+def plot_gp_predictions(pred_train, pred_test, time_train, time_test, y_train, y_test):
+    lower_train, upper_train = pred_train.confidence_region()
+    lower_test, upper_test = pred_test.confidence_region()
+
+    plt.plot(time_train, pred_train.mean, color='b', label='Mean')
+    plt.fill_between(time_train, lower_train, upper_train, alpha=0.1, color='b', label='Confidence')
 
     plt.plot(time_test, pred_test.mean, color='r')
-    lower, upper = pred_test.confidence_region()
-
-    lower = np.clip(lower, 0, 1)
-    upper = np.clip(upper, 0, 1)
-
-    plt.fill_between(time_test, lower, upper, alpha=0.4, color='pink')
-    plt.vlines(x= len(time_train), ymin=0, ymax=max(y_train.max(), y_test.max()), 
-            color='black', linestyle='--', label='Train-Test Split')
-
-
-    plt.legend()
-
-    plt.xlabel('Time (5 min intervals between 8am and 4pm)', fontsize=13)
-    plt.ylabel('PV Production (0-1 Scale)')
-
-    plt.show();
+    plt.fill_between(time_test, lower_test, upper_test, alpha=0.1, color='r')
+    plt.vlines(x=time_train.min() + len(time_train), ymin=0, ymax=max(y_train.max(), y_test.max()), 
+               color='black', linestyle='--', label='Train-Test Split')
 
 def plot_acf_pacf(y):
     """

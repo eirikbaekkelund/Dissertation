@@ -3,7 +3,7 @@ import gpytorch
 from gpytorch.models import ExactGP, ApproximateGP
 from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy
 from gpytorch.likelihoods import BetaLikelihood
-from gpytorch.priors import SmoothedBoxPrior
+# from gpytorch.priors import SmoothedBoxPrior
 from gpytorch.kernels import MaternKernel, ScaleKernel
 from gpytorch.means import ConstantMean
 from gpytorch.distributions import MultivariateNormal
@@ -108,16 +108,6 @@ class ExactGPModel(ExactGP):
 
 # TODO make Beta likelihood in a (Sparse) Variational GP model
 
-from gpytorch.models import ApproximateGP
-from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy 
-from gpytorch.likelihoods import BetaLikelihood
-from gpytorch.priors import SmoothedBoxPrior
-from gpytorch.kernels import MaternKernel, ScaleKernel
-from gpytorch.means import ConstantMean
-from gpytorch.distributions import MultivariateNormal
-import torch
-import gpytorch
-
 class ApproximateGPBaseModel(ApproximateGP):
     """ 
     Base model for performing inference with a Gaussian Process using
@@ -128,18 +118,18 @@ class ApproximateGPBaseModel(ApproximateGP):
         likelihood (gpytorch.likelihoods.Likelihood): likelihood
     """
 
-    def __init__(self, 
-                 train_x : torch.Tensor, 
-                 likelihood : gpytorch.likelihoods.Likelihood):
+    def __init__(self, train_x : torch.Tensor, likelihood : gpytorch.likelihoods.Likelihood):
         
         variational_distribution = CholeskyVariationalDistribution(train_x.size(0))
-        variational_strategy = VariationalStrategy(self, train_x, variational_distribution, learn_inducing_locations=True)
+        variational_strategy = VariationalStrategy(self, train_x, variational_distribution) 
         
         super(ApproximateGPBaseModel, self).__init__(variational_strategy)
         
-        dims = len(train_x) if len(train_x.shape) == 0 else train_x.shape[1]
+        dims = 1 if len(train_x.shape) == 1 else train_x.shape[1]
+        print(f'Number of dimensions: {dims}')
+        print(f'Number of inducing points: {train_x.size(0)}')
         
-        self.mean_module = ConstantMean(prior=SmoothedBoxPrior(0.5, 1))
+        self.mean_module = ConstantMean() #prior=SmoothedBoxPrior(0.5, 1))
         self.covar_module = ScaleKernel(MaternKernel(nu=2.5, ard_num_dims=dims))
 
         self.likelihood = likelihood
@@ -160,35 +150,8 @@ class ApproximateGPBaseModel(ApproximateGP):
         latent_u = MultivariateNormal(mu, k)
 
         return latent_u
-
-class BetaGP(ApproximateGPBaseModel):
-    """ 
-    Stochastic Variational Inference GP model for regression using
-    inducing points for scalability and a Beta likelihood for bounded outputs
-    in the range [0, 1]
-
-    Args:
-        inducing_points (torch.Tensor): inducing points
-        variational_dist (gpytorch.variational.VariationalDistribution): variational distribution
-        mean_module (gpytorch.means.Mean): mean module
-        covar_module (gpytorch.kernels.Kernel): covariance module
-    """
-    # inherits init from ApproximateGPBaseModel but adds X and y to input when initialising
-    def __init__(self, 
-                 X : torch.Tensor, 
-                 y : torch.Tensor):
         
-        self.X = X
-        self.y = y
-        self.likelihood = BetaLikelihood()
-        self.model = super(BetaGP, self).__init__(X, self.likelihood)
-    
-    def train(self,
-              n_iter : int,
-              lr : float,
-              optim : torch.optim.Optimizer,
-              device : torch.device,
-              verbose : bool = True):
+    def fit(self, n_iter : int, lr : float, optim : torch.optim.Optimizer, device : torch.device, verbose : bool = True):
         """
         Train the GP model using SVI
 
@@ -207,8 +170,10 @@ class BetaGP(ApproximateGPBaseModel):
         optimizer = optim(self.parameters(), lr=lr)
 
         elbo = gpytorch.mlls.VariationalELBO(likelihood=self.likelihood, 
-                                             model=self, 
-                                             num_data=len(self.y))
+                                            model=self, 
+                                            num_data=y.size(0))
+        
+        print_freq = n_iter // 10
         
         for i in range(n_iter):
             optimizer.zero_grad()
@@ -217,6 +182,45 @@ class BetaGP(ApproximateGPBaseModel):
             loss.backward()
             optimizer.step()
 
-            if verbose:
+            if verbose and i % print_freq == 0:
                 print(f'Iter {i+1}/{n_iter} - Loss: {loss.item():.3f}')
     
+    def predict(self, X : torch.Tensor, device : torch.device):
+        """ 
+        Make predictions with the GP model
+
+        Args:
+            X (torch.Tensor): test data
+            device (torch.device): device to make predictions on
+
+        Returns:
+            preds (gpytorch.distributions.MultivariateNormal): predictive mean and variance
+        """
+        self.eval()
+        self.likelihood.eval()
+        
+        self.to(device)
+        self.likelihood.to(device)
+
+        with torch.no_grad():
+            preds = self.likelihood(self(X))
+            
+        return preds
+
+class BetaGP(ApproximateGPBaseModel):
+    """ 
+    Stochastic Variational Inference GP model for regression using
+    inducing points for scalability and a Beta likelihood for bounded outputs
+    in the range [0, 1]
+
+    Args:
+        inducing_points (torch.Tensor): inducing points
+        variational_dist (gpytorch.variational.VariationalDistribution): variational distribution
+        mean_module (gpytorch.means.Mean): mean module
+        covar_module (gpytorch.kernels.Kernel): covariance module
+    """
+    # inherits init from ApproximateGPBaseModel but adds X and y to input when initialising
+    def __init__(self, X : torch.Tensor, y : torch.Tensor):
+        self.X = X
+        self.y = y
+        self.model = super(BetaGP, self).__init__(X, BetaLikelihood(scale_constraint=gpytorch.constraints.Interval(-0.01, 1.01)))
