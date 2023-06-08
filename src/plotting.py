@@ -70,7 +70,7 @@ def plot_gp(func):
 
         func(pred_train, pred_test, time_train, time_test, y_train, y_test)
 
-        plt.legend()
+        plt.legend(loc='upper left')
 
         plt.xlabel('Time (5 min intervals between 8am and 4pm)', fontsize=13)
         plt.ylabel('PV Production (0-1 Scale)')
@@ -84,8 +84,8 @@ def plot_gp_predictions(pred_train, pred_test, time_train, time_test, y_train, y
     lower_train, upper_train = pred_train.confidence_region()
     lower_test, upper_test = pred_test.confidence_region()
 
-    plt.plot(time_train, pred_train.mean, color='b', label='Mean')
-    plt.fill_between(time_train, lower_train, upper_train, alpha=0.1, color='b', label='Confidence')
+    plt.plot(time_train, pred_train.mean, color='b')
+    plt.fill_between(time_train, lower_train, upper_train, alpha=0.1, color='b')
 
     plt.plot(time_test, pred_test.mean, color='r')
     plt.fill_between(time_test, lower_test, upper_test, alpha=0.1, color='r')

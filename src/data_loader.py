@@ -427,15 +427,17 @@ class PVDataLoader:
         systems, pv_series = align_pv_systems(df_location=systems, df_pv=df_pv)
         lats, longs = get_location_maps(df_location=systems, n_systems=n_systems)
 
-        # update index of pv_series
-        with pd.option_context('mode.chained_assignment', None):
-            pv_series['datetime'] = date_time
+      
         
         n_daily_points = (day_max - day_min) * 60 // minute_interval
         n_samples = int(n_daily_points * n_days)
         
         # get relevant sample of pv series
         pv_series = pv_series.iloc[n_samples*day_init:n_samples*(day_init + 1), :n_systems]
+
+        # update index of pv_series
+        with pd.option_context('mode.chained_assignment', None):
+            pv_series['datetime'] = date_time
 
         # create stack of all systems
         pv_series = stack_dataframe(df_pv=pv_series, lats_map=lats, longs_map=longs)
