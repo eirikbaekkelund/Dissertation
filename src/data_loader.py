@@ -459,7 +459,7 @@ class PVDataLoader:
     
     def __getitem__(self, idx):
         return self.time_tensor[idx], self.r_grid_tensor[idx], self.y_tensor[idx]
-    
+        
     def get_time_series(self):
 
         if torch.cuda.is_available():
