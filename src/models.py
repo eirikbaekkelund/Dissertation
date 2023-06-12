@@ -122,6 +122,11 @@ class ExactGPModel(ExactGP):
 # TODO add option for covariance function
 # TODO make work for additive and product kernels
 # TODO possibly add natural gradients
+# TODO test MeanFieldVariationalDistribution
+# TODO test UnwhitenedVariationalStrategy
+# TODO test different kernels
+# TODO test different likelihoods
+# TODO add confidence region for beta likelihood
 
 class ApproximateGPBaseModel(ApproximateGP):
     """ 
@@ -136,17 +141,20 @@ class ApproximateGPBaseModel(ApproximateGP):
 
     def __init__(self, train_x : torch.Tensor, 
                  likelihood : gpytorch.likelihoods.Likelihood, 
-                 variational_distribution : gpytorch.variational):
+                 variational_distribution : gpytorch.variational,
+                 mean_module : gpytorch.means.Mean,
+                 covar_module : gpytorch.kernels.Kernel):
        
-        variational_strategy = VariationalStrategy(self, train_x, variational_distribution, learn_inducing_locations=True) 
+        variational_strategy = VariationalStrategy(self, train_x, variational_distribution, learn_inducing_locations=False) 
         
         super(ApproximateGPBaseModel, self).__init__(variational_strategy)
         
+        # TODO change this to accept exogenous variables
+        
         dims = 1 if len(train_x.shape) == 1 else train_x.shape[1]
         
-        self.mean_module = ConstantMean()
-        self.covar_module = ScaleKernel(MaternKernel(nu=3/2, ard_num_dims=dims))
-
+        self.mean_module = mean_module
+        self.covar_module = covar_module
         self.likelihood = likelihood
     
     def forward(self, x):
@@ -233,8 +241,16 @@ class GaussianGP(ApproximateGPBaseModel):
         mean_module (gpytorch.means.Mean): mean module
         covar_module (gpytorch.kernels.Kernel): covariance module
     """
-    def __init__(self, X : torch.Tensor, y : torch.Tensor):
-        super(GaussianGP, self).__init__(X, GaussianLikelihood(), CholeskyVariationalDistribution(X.size(0)) )
+    def __init__(self, 
+                 X : torch.Tensor, 
+                 y : torch.Tensor, 
+                 mean_module : gpytorch.means.Mean,
+                 covar_module : gpytorch.kernels.Kernel):
+        super(GaussianGP, self).__init__(train_x=X, 
+                                         likelihood=GaussianLikelihood(), 
+                                         variational_distribution=CholeskyVariationalDistribution(X.size(0)),
+                                         mean_module=mean_module,
+                                         covar_module=covar_module)
         self.X = X
         self.y = y
 
@@ -250,7 +266,14 @@ class BetaGP(ApproximateGPBaseModel):
         mean_module (gpytorch.means.Mean): mean module
         covar_module (gpytorch.kernels.Kernel): covariance module
     """
-    def __init__(self, X : torch.Tensor, y : torch.Tensor):
-        super(BetaGP, self).__init__(X, BetaLikelihood(), CholeskyVariationalDistribution(X.size(0)) )
+    def __init__(self, X : torch.Tensor, 
+                 y : torch.Tensor,
+                 mean_module : gpytorch.means.Mean,
+                    covar_module : gpytorch.kernels.Kernel):
+        super(BetaGP, self).__init__(train_x=X,
+                                     likelihood=BetaLikelihood(), 
+                                     variational_distribution=CholeskyVariationalDistribution(X.size(0)),
+                                     mean_module=mean_module,
+                                     covar_module=covar_module)
         self.X = X
         self.y = y
