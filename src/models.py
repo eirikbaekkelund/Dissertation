@@ -1,10 +1,10 @@
 import torch
 import gpytorch
 from gpytorch.models import ExactGP, ApproximateGP
-from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy
+from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy, UnwhitenedVariationalStrategy
 from gpytorch.likelihoods import BetaLikelihood, GaussianLikelihood
 from gpytorch.priors import SmoothedBoxPrior, UniformPrior, NormalPrior, GammaPrior, HalfCauchyPrior
-from gpytorch.kernels import MaternKernel, ScaleKernel
+from gpytorch.kernels import MaternKernel, PeriodicKernel, RBFKernel, ScaleKernel
 from gpytorch.means import ConstantMean
 from gpytorch.distributions import MultivariateNormal
 
@@ -55,7 +55,7 @@ class ExactGPModel(ExactGP):
         
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
-    def _train(self, n_iter, lr, optim):
+    def fit(self, n_iter, lr, optim):
         """
         Train the GP model
 
@@ -90,29 +90,35 @@ class ExactGPModel(ExactGP):
             if i % 100 == 0:
                 print('Iter %d/%d - Loss: %.3f' % (i + 1, n_iter, loss.item()))
 
-    def predict(self, x_test):
+    def predict(self, X : torch.Tensor, device : torch.device):
         """ 
-        Make prediction on test data
+        Make predictions with the GP model
 
         Args:
-            x_test (torch.Tensor): test data
-        
+            X (torch.Tensor): test data
+            device (torch.device): device to make predictions on
+
         Returns:
-            preds_test (torch.Tensor): predicted mean test
+            preds (gpytorch.distributions.MultivariateNormal): predictive mean and variance
         """
         self.eval()
         self.likelihood.eval()
         
+        self.to(device)
+        self.likelihood.to(device)
+
         with torch.no_grad():
-            preds_test = self.likelihood(self(x_test))
-            preds_train = self.likelihood(self(self.train_x))
-        
-        return preds_test, preds_train
+            preds = self.likelihood(self(X))
+            
+        return preds
     
 
 ########################################
 ####  Approximate GP Model Classes  ####
 ########################################
+
+# TODO maybe use UnwhitenedVariationalStrategy instead of VariationalStrategy for having exact inducing points
+# TODO make Beta likelihood work with SVI
 
 class ApproximateGPBaseModel(ApproximateGP):
     """ 
@@ -134,7 +140,7 @@ class ApproximateGPBaseModel(ApproximateGP):
         dims = 1 if len(train_x.shape) == 1 else train_x.shape[1]
         
         self.mean_module = ConstantMean()
-        self.covar_module = ScaleKernel(MaternKernel(nu=2.5, ard_num_dims=dims))
+        self.covar_module = ScaleKernel(MaternKernel(nu=5/2, ard_num_dims=dims) * PeriodicKernel())
 
         self.likelihood = likelihood
     
@@ -217,8 +223,7 @@ class ApproximateGPBaseModel(ApproximateGP):
 class GaussianGP(ApproximateGPBaseModel):
     """ 
     Stochastic Variational Inference GP model for regression using
-    inducing points for scalability and a Beta likelihood for bounded outputs
-    in the range [0, 1]
+    inducing points for scalability and a Gaussian likelihood
 
     Args:
         inducing_points (torch.Tensor): inducing points
