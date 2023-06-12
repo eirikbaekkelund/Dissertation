@@ -14,10 +14,10 @@ def plot_grid(df, COORDS, RADIUS):
     """
     _, ax = plt.subplots(figsize=(8, 8))
 
-    # Create Basemap instance
+    # create Basemap instance
     map_uk = Basemap(llcrnrlon=-7, llcrnrlat=49, urcrnrlon=2, urcrnrlat=60, resolution='l', ax=ax)
 
-    # Draw coastlines and country boundaries
+    # draw coastlines and country boundaries
     map_uk.drawcoastlines()
     map_uk.drawcountries()
 
@@ -28,7 +28,7 @@ def plot_grid(df, COORDS, RADIUS):
     x, y = map_uk(df['longitude_noisy'].values, df['latitude_noisy'].values)
     map_uk.scatter(x, y, alpha=0.4, color='b', label='PV systems')
 
-    # Draw a circle representing the desired area
+    # a circle representing the desired area
     lon, lat = map_uk(COORDS[1], COORDS[0])
     circle = plt.Circle((lon, lat), RADIUS, color='r', fill=True, alpha=0.3, label='Selected Area')
     ax.add_patch(circle)
@@ -43,6 +43,10 @@ def plot_grid(df, COORDS, RADIUS):
     ax.legend()
 
     plt.show()
+
+
+# TODO add check for whether the prediction is a distribution or a point estimate
+# (i.e. whether it is an exact GP or a variational GP)
 
 def plot_gp(func):
     """
