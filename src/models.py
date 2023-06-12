@@ -1,4 +1,5 @@
 import torch
+from torch import nn
 import gpytorch
 from gpytorch.models import ExactGP, ApproximateGP
 from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy, UnwhitenedVariationalStrategy
@@ -287,7 +288,7 @@ class BetaGP(ApproximateGPBaseModel):
 # TODO check if this works for multivariate time series
 # TODO set up for device agnostic code
 
-class KalmanFilterSmoother():
+class KalmanFilterSmoother(nn.Module):
     """ 
     Class for performing Kalman filter smoothing on 
     a linear Gaussian state space model.
