@@ -291,6 +291,9 @@ class KalmanFilterSmoother():
     """ 
     Class for performing Kalman filter smoothing on 
     a linear Gaussian state space model.
+    
+    This is based on the work in: 
+    https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=5711863
 
     Args:
         F (torch.Tensor): transition matrix
