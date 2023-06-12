@@ -4,7 +4,7 @@ from gpytorch.models import ExactGP, ApproximateGP
 from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy, UnwhitenedVariationalStrategy
 from gpytorch.likelihoods import BetaLikelihood, GaussianLikelihood
 from gpytorch.priors import SmoothedBoxPrior, UniformPrior, NormalPrior, GammaPrior, HalfCauchyPrior
-from gpytorch.kernels import MaternKernel, PeriodicKernel, RBFKernel, ScaleKernel
+from gpytorch.kernels import MaternKernel, PeriodicKernel, RBFKernel, ScaleKernel, AdditiveKernel, ProductKernel
 from gpytorch.means import ConstantMean
 from gpytorch.distributions import MultivariateNormal
 
@@ -119,6 +119,9 @@ class ExactGPModel(ExactGP):
 
 # TODO maybe use UnwhitenedVariationalStrategy instead of VariationalStrategy for having exact inducing points
 # TODO make Beta likelihood work with SVI
+# TODO add option for covariance function
+# TODO make work for additive and product kernels
+# TODO possibly add natural gradients
 
 class ApproximateGPBaseModel(ApproximateGP):
     """ 
@@ -128,11 +131,13 @@ class ApproximateGPBaseModel(ApproximateGP):
     Args:
         train_x (torch.Tensor): training data
         likelihood (gpytorch.likelihoods.Likelihood): likelihood
+        variational_distribution (gpytorch.variational.VariationalDistribution): variational distribution
     """
 
-    def __init__(self, train_x : torch.Tensor, likelihood : gpytorch.likelihoods.Likelihood):
-        
-        variational_distribution = CholeskyVariationalDistribution(train_x.size(0))
+    def __init__(self, train_x : torch.Tensor, 
+                 likelihood : gpytorch.likelihoods.Likelihood, 
+                 variational_distribution : gpytorch.variational):
+       
         variational_strategy = VariationalStrategy(self, train_x, variational_distribution, learn_inducing_locations=True) 
         
         super(ApproximateGPBaseModel, self).__init__(variational_strategy)
@@ -140,7 +145,7 @@ class ApproximateGPBaseModel(ApproximateGP):
         dims = 1 if len(train_x.shape) == 1 else train_x.shape[1]
         
         self.mean_module = ConstantMean()
-        self.covar_module = ScaleKernel(MaternKernel(nu=5/2, ard_num_dims=dims) * PeriodicKernel())
+        self.covar_module = ScaleKernel(MaternKernel(nu=3/2, ard_num_dims=dims))
 
         self.likelihood = likelihood
     
@@ -158,10 +163,8 @@ class ApproximateGPBaseModel(ApproximateGP):
         
         mu = self.mean_module(x)
         k = self.covar_module(x)
-      
-        latent_u = MultivariateNormal(mu, k)
 
-        return latent_u
+        return MultivariateNormal(mu, k)
         
     def fit(self, n_iter : int, lr : float, optim : torch.optim.Optimizer, device : torch.device, verbose : bool = True):
         """
@@ -180,7 +183,6 @@ class ApproximateGPBaseModel(ApproximateGP):
         self.likelihood.train()
 
         optimizer = optim(self.parameters(), lr=lr)
-
         elbo = gpytorch.mlls.VariationalELBO(likelihood=self.likelihood, 
                                             model=self, 
                                             num_data=self.y.size(0))
@@ -223,7 +225,7 @@ class ApproximateGPBaseModel(ApproximateGP):
 class GaussianGP(ApproximateGPBaseModel):
     """ 
     Stochastic Variational Inference GP model for regression using
-    inducing points for scalability and a Gaussian likelihood
+    inducing points for scalability and a Gaussian likelihood for unbounded outputs
 
     Args:
         inducing_points (torch.Tensor): inducing points
@@ -232,7 +234,7 @@ class GaussianGP(ApproximateGPBaseModel):
         covar_module (gpytorch.kernels.Kernel): covariance module
     """
     def __init__(self, X : torch.Tensor, y : torch.Tensor):
-        super(GaussianGP, self).__init__(X, GaussianLikelihood())
+        super(GaussianGP, self).__init__(X, GaussianLikelihood(), CholeskyVariationalDistribution(X.size(0)) )
         self.X = X
         self.y = y
 
@@ -249,6 +251,6 @@ class BetaGP(ApproximateGPBaseModel):
         covar_module (gpytorch.kernels.Kernel): covariance module
     """
     def __init__(self, X : torch.Tensor, y : torch.Tensor):
-        super(BetaGP, self).__init__(X, BetaLikelihood())
+        super(BetaGP, self).__init__(X, BetaLikelihood(), CholeskyVariationalDistribution(X.size(0)) )
         self.X = X
         self.y = y
