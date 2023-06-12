@@ -277,3 +277,159 @@ class BetaGP(ApproximateGPBaseModel):
                                      covar_module=covar_module)
         self.X = X
         self.y = y
+
+########################################
+######  Kalman Filter Smoothing  #######
+########################################
+
+# TODO run tests and make sure it works
+# TODO add option for exogenous variables
+# TODO check if this works for multivariate time series
+# TODO set up for device agnostic code
+
+class KalmanFilterSmoother():
+    """ 
+    Class for performing Kalman filter smoothing on 
+    a linear Gaussian state space model.
+
+    Args:
+        F (torch.Tensor): transition matrix
+        Q (torch.Tensor): process noise covariance matrix
+        H (torch.Tensor): observation matrix
+        R (torch.Tensor): observation noise covariance matrix
+    """
+    def __init__(self, F, Q, H, R):
+        self.F = F
+        self.Q = Q
+        self.H = H
+        self.R = R
+
+    def _predict(self, x, P):
+        """ 
+        Perform the prediction step of the Kalman filter.
+        This should be called before the filtering update step.
+
+        Args:
+            x: torch.Tensor of shape (d,) where d is the spatial dimension
+            P: torch.Tensor of shape (d, d)
+        
+        Returns:
+            xnew: torch.Tensor of shape (d,) where d is the spatial dimension
+            Pnew: torch.Tensor of shape (d, d)
+        """
+
+        F = self.F
+        Q = self.Q
+        return torch.matmul(F, x), torch.matmul(torch.matmul(F, P), F.t()) + Q
+
+    def _filter_update(self, x, P, y):
+        """ 
+        Perform the filtering update step.
+        This should be called after applying the forward pass.
+
+        Args:
+            x: torch.Tensor of shape (d,) where d is the spatial dimension
+            P: torch.Tensor of shape (d, d)
+            y: torch.Tensor of shape (d,) where d is the spatial dimension
+        
+        Returns:
+            xnew: torch.Tensor of shape (d,) where d is the spatial dimension
+            Pnew: torch.Tensor of shape (d, d)
+        """
+
+        R = self.R
+        H = self.H
+       
+        # Compute Kalman gain matrix
+       
+        if not torch.isnan(y):
+            S = torch.matmul(torch.matmul(H, P), H.t()) + R
+            chol = torch.cholesky(S)
+            
+            Kt = torch.cholesky_solve(H @ P, chol)
+            Hx = torch.matmul(H, x)
+       
+            return x + torch.matmul(Kt, y - Hx).t(), P - torch.matmul(torch.matmul(Kt, S.t()), Kt)
+       
+        else:
+            return x, P
+
+    def _smoother_update(self, x_now, x_next, x_forecast, P_now, P_next, P_forecast):
+        """ 
+        Perform the smoothing update step. 
+        This should be called after applying the forward pass.
+
+        Args:
+            x_now: torch.Tensor of shape (d,) where d is the spatial dimension
+            x_next: torch.Tensor of shape (d,) where d is the spatial dimension
+            x_forecast: torch.Tensor of shape (d,) where d is the spatial dimension
+            P_now: torch.Tensor of shape (d, d)
+            P_next: torch.Tensor of shape (d, d)
+            P_forecast: torch.Tensor of shape (d, d)
+
+        Returns:
+            xnew: torch.Tensor of shape (d,) where d is the spatial dimension
+            Pnew: torch.Tensor of shape (d, d)
+        """
+
+        F = self.F
+        
+        # Compute smoothing gain
+        chol = torch.cholesky(P_forecast)
+        Jt = torch.cholesky_solve(F @ P_now, chol)
+        
+        # Update
+        xnew = x_now + torch.matmul(Jt, x_next - x_forecast).t()
+        Pnew = P_now + torch.matmul(torch.matmul(Jt, P_next - P_forecast), Jt.t())
+        
+        return xnew, Pnew
+
+    def forward_pass(self, x, P, y_list):
+        """ 
+        Calling the forward pass gives us the filtering distribution.
+         Args:
+            x: torch.Tensor of shape (d,) where d is the spatial dimension
+            P: torch.Tensor of shape (d, d)
+            y_list: torch.Tensor of shape (N, d) containing a list of observations at N timepoints.
+                    Note that when there is no observation at time n, then set y_list[n] = torch.nan
+        """
+        means = []
+        covariances = []
+        
+        for y in y_list:
+            
+            x, P = self._filter_update(x, P, y)
+            
+            means.append(x)
+            covariances.append(P)
+            
+            x, P = self._predict(x, P)
+       
+        return torch.stack(means), torch.stack(covariances)
+
+    def backward_pass(self, x, P):
+        """ 
+        Calling the backward pass gives us the smoothing distribution. This should be called after applying the forward pass.
+        
+        Args:
+            x: torch.Tensor of shape (N, d) where N is the number of forward time steps and d is the spatial dimension
+            P: torch.Tensor of shape (N, d, d)
+        
+        Returns:
+            means: torch.Tensor of shape (N, d) where N is the number of forward time steps and d is the spatial dimension
+            covariances: torch.Tensor of shape (N, d, d)
+        """        
+        N = x.shape[0]
+       
+        means = [x[-1]]
+        covariances = [P[-1]]
+        
+        for n in range(N - 2, -1, -1):
+            # Forecast
+            xf, Pf = self._predict(x[n], P[n])
+            # Update
+            xnew, Pnew = self._smoother_update(x[n], x[n + 1], xf, P[n], P[n + 1], Pf)
+            means.append(xnew)
+            covariances.append(Pnew)
+       
+        return torch.flip(torch.stack(means), [0]), torch.flip(torch.stack(covariances), [0])
