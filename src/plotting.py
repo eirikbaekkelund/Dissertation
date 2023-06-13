@@ -1,6 +1,8 @@
 import matplotlib.pyplot as plt
 from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 import numpy as np
+import torch
+import gpytorch
 from mpl_toolkits.basemap import Basemap
 
 def plot_grid(df, COORDS, RADIUS):
@@ -44,57 +46,100 @@ def plot_grid(df, COORDS, RADIUS):
 
     plt.show()
 
+def plot_train_test_split(time_train, time_test, y_train, y_test):
+    """ 
+    Plot the train-test split of the data
 
-# TODO add check for whether the prediction is a distribution or a point estimate
-# (i.e. whether it is an exact GP or a variational GP)
-
-def plot_gp(func):
+    Args:
+        time_train (torch.Tensor): training time
+        time_test (torch.Tensor): test time
+        y_train (torch.Tensor): training data
+        y_test (torch.Tensor): test data
     """
-    Decorator to plot the GP predictions
-    """
-    def wrapper(pred_train, pred_test, time_train, time_test, y_train, y_test):
-        """ 
-        Wrapper function to plot the GP predictions
+    # set figure size
+    plt.figure(figsize=(15, 6))
 
-        Args:
-            pred_train (gpytorch.distributions.MultivariateNormal): GP model f(x) for the training data
-            pred_test (gpytorch.distributions.MultivariateNormal): GP model f(x) for the test data
-            time_train (torch.Tensor): time for the training data
-            time_test (torch.Tensor): time for the test data
-            y_train (torch.Tensor): PV production for the training data
-            y_test (torch.Tensor): PV production for the test data
-        
-        Returns:
-            wrapper (function): function to plot the GP predictions
-        """
-        plt.figure(figsize=(13, 5))
+    # plot the training and test data
+    plt.plot(time_train, y_train, color='b', alpha=0.4)
+    plt.plot(time_test, y_test, color='r', alpha=0.4)
 
-        plt.scatter(time_train, y_train, marker='x', color='black', alpha=0.7, label='Observed Data')
-        plt.scatter(time_test, y_test, marker='x', color='black', alpha=0.7)
+    # plot the train-test split cutoff
+    plt.vlines( x= time_train[0] + len(time_train), 
+                ymin=-0.01, 
+                ymax=max(y_train.max(), y_test.max()), 
+                label='Train-Test Split', 
+                color='black', 
+                linestyle='--')
 
-        func(pred_train, pred_test, time_train, time_test, y_train, y_test)
+    plt.xlabel('Time (5 min intervals between 8am and 4pm)', fontsize=13)
+    plt.ylabel('PV Production (0-1 Scale)', fontsize=13)
+    plt.legend()
+    plt.show();
 
-        plt.legend(loc='upper left')
 
-        plt.xlabel('Time (5 min intervals between 8am and 4pm)', fontsize=13)
-        plt.ylabel('PV Production (0-1 Scale)')
-
-        plt.show()
+def plot_gp(model, x_train, x_test, y_train, y_test, inducing_points = None, y_inducing = None, device=torch.device('cpu')):
     
-    return wrapper
+    """ 
+    Plot the GP model predictions
 
-@plot_gp
-def plot_gp_predictions(pred_train, pred_test, time_train, time_test, y_train, y_test):
-    lower_train, upper_train = pred_train.confidence_region()
-    lower_test, upper_test = pred_test.confidence_region()
+    Args:
+        model (gpytorch.models.ApproximateGP): GP model
+        x_train (torch.Tensor): training data
+        x_test (torch.Tensor): test data
+        inducing_points (torch.Tensor): inducing points  
+    """
+    preds_train = model.predict(x_train, device=device)
+    preds_test = model.predict(x_test, device=device)
 
-    plt.plot(time_train, pred_train.mean, color='b')
-    plt.fill_between(time_train, lower_train, upper_train, alpha=0.1, color='b')
+    plt.figure(figsize=(15, 6))
 
-    plt.plot(time_test, pred_test.mean, color='r')
-    plt.fill_between(time_test, lower_test, upper_test, alpha=0.1, color='r')
-    plt.vlines(x=time_train.min() + len(time_train), ymin=0, ymax=max(y_train.max(), y_test.max()), 
-               color='black', linestyle='--', label='Train-Test Split')
+    with torch.no_grad():
+
+        if isinstance(model.likelihood, gpytorch.likelihoods.GaussianLikelihood):
+            # plot the means
+            plt.plot(x_train, preds_train.mean, color='b')
+            plt.plot(x_test, preds_test.mean, color='r')
+
+            # plot the confidence regions
+            lower, upper = preds_train.confidence_region()
+            plt.fill_between(x_train, lower, upper, color='b', alpha=0.1)
+
+            lower, upper = preds_test.confidence_region()
+            plt.fill_between(x_test, lower, upper, color='r', alpha=0.1)
+        
+        else:
+            # plot the means
+            plt.plot(x_train, preds_train.mean.mean(axis=0), color='b')            
+            plt.plot(x_test, preds_test.mean.mean(axis=0), color='r')
+
+            # plot the confidence regions
+            lower_train, upper_train = np.percentile(preds_train.mean, q=[5, 95], axis=0)
+            plt.fill_between(x_train, lower_train, upper_train, alpha=0.1, color='b')
+            
+            lower_test, upper_test = np.percentile(preds_test.mean, q=[2.5, 97.5], axis=0)
+            plt.fill_between(x_test, lower_test, upper_test, alpha=0.1, color='r')
+        
+        # scatter test data
+        plt.scatter(x_test, y_test, color='k', alpha=0.4, marker='x')
+        
+        if isinstance(model, gpytorch.models.ApproximateGP):
+            inducing_points = model.variational_strategy.inducing_points
+            # scatter inducing points
+            plt.scatter(inducing_points, y_inducing, color='k', marker='x', label='Observed Data', alpha=0.4)
+        
+        else:
+            plt.scatter(x_train, y_train, color='k', marker='x', label='Observed Data', alpha=0.4)
+       
+    ymax = max(y_train.max(), y_test.max()) + 0.1
+    
+    plt.vlines(x=x_train.min() + len(x_train), ymin=-0.05, ymax=ymax, 
+               color='black', linestyle='--', label='Train-Test Split') 
+    
+    plt.ylim(-0.01, ymax)
+    plt.xlabel('Time (5 min intervals between 8am and 4pm)', fontsize=13)
+    plt.ylabel('PV Production (0-1 Scale)', fontsize=13)
+
+    plt.legend(loc='upper left')
 
 def plot_acf_pacf(y):
     """

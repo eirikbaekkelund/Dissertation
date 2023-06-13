@@ -24,17 +24,17 @@ class ExactGPModel(ExactGP):
         covar_module (gpytorch.kernels.Kernel): covariance module
     """
     def __init__(self, 
-                 train_x, 
-                 train_y, 
-                 likelihood,
-                 mean_module,
-                 covar_module):
+                 X : torch.Tensor, 
+                 y : torch.Tensor,
+                 likelihood : gpytorch.likelihoods.Likelihood,
+                 mean_module : gpytorch.means.Mean,
+                 covar_module : gpytorch.kernels.Kernel):
         
-        super(ExactGPModel, self).__init__(train_x, 
-                                           train_y, 
+        super(ExactGPModel, self).__init__(X, 
+                                           y, 
                                            likelihood)
-        self.train_x = train_x
-        self.train_y = train_y
+        self.X = X
+        self.y = y
         self.mean_module = mean_module
         self.covar_module = covar_module
     
@@ -75,18 +75,23 @@ class ExactGPModel(ExactGP):
             raise ValueError('optim must be Adam or SGD')
         
         mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self)
-       
+        
+        print_freq = n_iter // 10
+        self.losses = []
+
+
         for i in range(n_iter):
             
             optimizer.zero_grad()
             
-            output = self(self.train_x)
-            loss = -mll(output, self.train_y)
+            output = self(self.X)
+            loss = -mll(output, self.y)
             loss.backward()
-            
             optimizer.step()
+
+            self.losses.append(loss.item())
             
-            if i % 100 == 0:
+            if (i + 1) % print_freq == 0:
                 print('Iter %d/%d - Loss: %.3f' % (i + 1, n_iter, loss.item()))
 
     def predict(self, X : torch.Tensor, device : torch.device):
