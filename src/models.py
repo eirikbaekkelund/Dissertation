@@ -2,12 +2,10 @@ import torch
 from torch import nn
 import gpytorch
 from gpytorch.models import ExactGP, ApproximateGP
-from gpytorch.variational import CholeskyVariationalDistribution, VariationalStrategy, UnwhitenedVariationalStrategy
+from gpytorch.variational import VariationalStrategy
 from gpytorch.likelihoods import BetaLikelihood, GaussianLikelihood
-from gpytorch.priors import SmoothedBoxPrior, UniformPrior, NormalPrior, GammaPrior, HalfCauchyPrior
-from gpytorch.kernels import MaternKernel, PeriodicKernel, RBFKernel, ScaleKernel, AdditiveKernel, ProductKernel
-from gpytorch.means import ConstantMean
 from gpytorch.distributions import MultivariateNormal
+from src.variational_dist import VariationalBase
 
 
 ########################################
@@ -131,8 +129,12 @@ class ExactGPModel(ExactGP):
 
 class ApproximateGPBaseModel(ApproximateGP):
     """ 
-    Base model for performing inference with a Gaussian Process using
-    stochastic variational inference with inducing points
+    Base model for performing inference with a Gaussian Process (GP) using
+    stochastic variational inference (SVI) with inducing points which can be
+    scaled to large datasets. 
+    
+    For a guide to GPs and SVI, see the following paper:
+    https://arxiv.org/abs/1309.6835
 
     Args:
         train_x (torch.Tensor): training data
@@ -142,11 +144,18 @@ class ApproximateGPBaseModel(ApproximateGP):
 
     def __init__(self, train_x : torch.Tensor, 
                  likelihood : gpytorch.likelihoods.Likelihood, 
-                 variational_distribution : gpytorch.variational,
                  mean_module : gpytorch.means.Mean,
-                 covar_module : gpytorch.kernels.Kernel):
-       
-        variational_strategy = VariationalStrategy(self, train_x, variational_distribution, learn_inducing_locations=False) 
+                 covar_module : gpytorch.kernels.Kernel,
+                 config : dict,
+                 jitter : float = 1e-4,
+                 learn_inducing_locations : bool = False
+                 ):
+        variational_distribution = VariationalBase(config).variational_distribution
+        variational_strategy = VariationalStrategy(self, 
+                                                   inducing_points=train_x, 
+                                                   variational_distribution=variational_distribution,
+                                                   learn_inducing_locations=learn_inducing_locations,
+                                                   jitter_val=jitter) 
         
         super(ApproximateGPBaseModel, self).__init__(variational_strategy)
         
@@ -175,7 +184,11 @@ class ApproximateGPBaseModel(ApproximateGP):
 
         return MultivariateNormal(mu, k)
         
-    def fit(self, n_iter : int, lr : float, optim : torch.optim.Optimizer, device : torch.device, verbose : bool = True):
+    def fit(self, 
+            n_iter : int, 
+            lr : float,
+            optim : torch.optim.Optimizer,
+            device : torch.device, verbose : bool = True):
         """
         Train the GP model using SVI
 
@@ -197,6 +210,7 @@ class ApproximateGPBaseModel(ApproximateGP):
                                             num_data=self.y.size(0))
         
         print_freq = n_iter // 10
+        self.losses = []
         
         for i in range(n_iter):
             optimizer.zero_grad()
@@ -205,9 +219,10 @@ class ApproximateGPBaseModel(ApproximateGP):
             loss.backward()
             optimizer.step()
 
+            self.losses.append(loss.item())
+
             if verbose and (i+1) % print_freq == 0:
                 print(f'Iter {i+1}/{n_iter} - Loss: {loss.item():.3f}')
-    
     
     def predict(self, X : torch.Tensor, device : torch.device):
         """ 
@@ -227,7 +242,12 @@ class ApproximateGPBaseModel(ApproximateGP):
         self.likelihood.to(device)
 
         with torch.no_grad():
-            preds = self.likelihood(self(X))
+           
+            if not isinstance(self.likelihood, GaussianLikelihood):
+                with gpytorch.settings.num_likelihood_samples(50):
+                    preds = self.likelihood(self(X))
+            else:
+                preds = self.likelihood(self(X))
             
         return preds
 
@@ -246,12 +266,17 @@ class GaussianGP(ApproximateGPBaseModel):
                  X : torch.Tensor, 
                  y : torch.Tensor, 
                  mean_module : gpytorch.means.Mean,
-                 covar_module : gpytorch.kernels.Kernel):
+                 covar_module : gpytorch.kernels.Kernel,
+                 config : dict,
+                 jitter : float = 1e-6,
+                 ):
+        
         super(GaussianGP, self).__init__(train_x=X, 
                                          likelihood=GaussianLikelihood(), 
-                                         variational_distribution=CholeskyVariationalDistribution(X.size(0)),
                                          mean_module=mean_module,
-                                         covar_module=covar_module)
+                                         covar_module=covar_module,
+                                         config=config,
+                                         jitter=jitter)
         self.X = X
         self.y = y
 
@@ -267,15 +292,30 @@ class BetaGP(ApproximateGPBaseModel):
         mean_module (gpytorch.means.Mean): mean module
         covar_module (gpytorch.kernels.Kernel): covariance module
     """
-    def __init__(self, X : torch.Tensor, 
+    def __init__(self, 
+                 X : torch.Tensor, 
                  y : torch.Tensor,
                  mean_module : gpytorch.means.Mean,
-                    covar_module : gpytorch.kernels.Kernel):
+                 covar_module : gpytorch.kernels.Kernel,
+                 config : dict,
+                 jitter : float = 1e-4,
+                 ):
+        
+        assert y.min() >= 0 and y.max() <= 1, 'y must be in the range [0, 1] for Beta likelihood'
+        
+        # add perturbation to the data to avoid numerical issues for bounded outputs
+        if y.min() == 0:
+            y += jitter
+        
+        if y.max() == 1:
+            y -= jitter
+        
         super(BetaGP, self).__init__(train_x=X,
                                      likelihood=BetaLikelihood(), 
-                                     variational_distribution=CholeskyVariationalDistribution(X.size(0)),
                                      mean_module=mean_module,
-                                     covar_module=covar_module)
+                                     covar_module=covar_module,
+                                     config=config,
+                                     jitter=jitter)
         self.X = X
         self.y = y
 
