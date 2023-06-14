@@ -54,7 +54,11 @@ class ExactGPModel(ExactGP):
         
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
-    def fit(self, n_iter, lr, optim):
+    def fit(self, 
+            n_iter : int,
+            lr : float,
+            optim : torch.optim.Optimizer,
+            device : torch.device):
         """
         Train the GP model
 
@@ -62,18 +66,14 @@ class ExactGPModel(ExactGP):
             n_iter (int): number of iterations
             lr (float): learning rate
             optim (str): optimizer
+            device (torch.device): device to train on
         """
+        self.to(device)
         
         self.train()
         self.likelihood.train()
         
-        if optim == 'Adam':
-            optimizer = torch.optim.Adam(self.parameters(), lr=lr)
-        elif optim == 'SGD':
-            optimizer = torch.optim.SGD(self.parameters(), lr=lr)
-        else:
-            raise ValueError('optim must be Adam or SGD')
-        
+        optimizer = optim(self.parameters(), lr=lr)
         mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.likelihood, self)
         
         print_freq = n_iter // 10
@@ -129,8 +129,10 @@ class ExactGPModel(ExactGP):
 # TODO test MeanFieldVariationalDistribution
 # TODO test UnwhitenedVariationalStrategy
 # TODO test different kernels
-# TODO test different likelihoods
 # TODO add confidence region for beta likelihood
+# TODO test different kernels
+# TODO config to work for unwhitened, natural, and tril natural
+# TODO create fit function for natural variational distribution
 
 class ApproximateGPBaseModel(ApproximateGP):
     """ 
@@ -249,8 +251,8 @@ class ApproximateGPBaseModel(ApproximateGP):
         with torch.no_grad():
            
             if not isinstance(self.likelihood, GaussianLikelihood):
-                with gpytorch.settings.num_likelihood_samples(50):
-                    preds = self.likelihood(self(X))
+                with gpytorch.settings.num_likelihood_samples(30):
+                    preds = self.likelihood(self(X)) 
             else:
                 preds = self.likelihood(self(X))
             

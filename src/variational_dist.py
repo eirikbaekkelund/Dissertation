@@ -40,7 +40,7 @@ class VariationalBase:
         Args:
             config (dict): configuration of the GP model
         """
-        assert config['name'] in ['cholesky', 'mean_field', 'unwhitened'], 'Variational distribution must be either cholesky, mean_field or unwhitened'
+        assert config['name'] in ['cholesky', 'mean_field'], 'Variational distribution must be either cholesky or mean_field'
         
         name = config['name']
         config = self.delete_non_config(config)
@@ -49,8 +49,6 @@ class VariationalBase:
             return CholeskyVariationalDistribution(**config)
         elif name == 'mean_field':
             return MeanFieldVariationalDistribution(**config)
-        elif name == 'unwhitened':
-            return UnwhitenedVariationalStrategy(**config)
     
     def get_natural(self, config):
         """ 
