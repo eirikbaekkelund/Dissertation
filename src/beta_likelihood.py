@@ -7,8 +7,6 @@ from gpytorch.constraints import Interval, Positive
 from gpytorch.priors import Prior
 from gpytorch.likelihoods import _OneDimensionalLikelihood
 
-
-
 class BetaLikelihood(_OneDimensionalLikelihood):
     """
     A Beta likelihood for regressing over percentages.
