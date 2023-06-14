@@ -132,7 +132,7 @@ def plot_gp(model, x_train, x_test, y_train, y_test, inducing_points = None, y_i
        
     ymax = max(y_train.max(), y_test.max()) + 0.1
     
-    plt.vlines(x=x_train.min() + len(x_train), ymin=-0.05, ymax=ymax, 
+    plt.vlines(x=x_train.max(), ymin=-0.05, ymax=ymax, 
                color='black', linestyle='--', label='Train-Test Split') 
     
     plt.ylim(-0.01, ymax)
