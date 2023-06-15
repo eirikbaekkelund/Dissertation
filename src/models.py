@@ -3,9 +3,10 @@ from torch import nn
 import gpytorch
 from gpytorch.models import ExactGP, ApproximateGP
 from gpytorch.variational import VariationalStrategy
-from gpytorch.likelihoods import BetaLikelihood, GaussianLikelihood
+from gpytorch.likelihoods import GaussianLikelihood
 from gpytorch.distributions import MultivariateNormal
 from src.variational_dist import VariationalBase
+from src.beta_likelihood import BetaLikelihood
 
 
 ########################################
