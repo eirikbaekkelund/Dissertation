@@ -295,10 +295,13 @@ class BetaGP(ApproximateGPBaseModel):
     in the range [0, 1]
 
     Args:
-        inducing_points (torch.Tensor): inducing points
+        X (torch.Tensor): inducing points input data
+        y (torch.Tensor): inducing points target data
         variational_dist (gpytorch.variational.VariationalDistribution): variational distribution
         mean_module (gpytorch.means.Mean): mean module
         covar_module (gpytorch.kernels.Kernel): covariance module
+        config (dict): dictionary of configuration parameters
+        jitter (float, optional): jitter value for numerical stability. Defaults to 1e-4.
     """
     def __init__(self, 
                  X : torch.Tensor, 

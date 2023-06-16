@@ -7,6 +7,7 @@ from gpytorch.constraints import Interval, Positive
 from gpytorch.priors import Prior
 from gpytorch.likelihoods import _OneDimensionalLikelihood
 
+
 class BetaLikelihood(_OneDimensionalLikelihood):
     """
     A Beta likelihood for regressing over percentages.
@@ -64,11 +65,11 @@ class BetaLikelihood(_OneDimensionalLikelihood):
 
     def forward(self, function_samples: Tensor, *args: Any, **kwargs: Any) -> Beta:
         
-        # Map function samples to the range [0, 1] 
-        # TODO explore other methods than sigmoid
-        mapped_samples = (torch.tanh(function_samples) / 2 )+ 0.5
+        eps = 1e-6
+        mapped_samples = torch.tanh(function_samples) / 2 + 0.5 + eps
 
-        self.alpha = self.scale * mapped_samples + 1e-6
-        self.beta = self.scale - self.alpha
-
-        return Beta(concentration1=self.alpha.exp(), concentration0=self.beta.exp())
+        self.alpha = self.scale * mapped_samples 
+        self.beta = torch.exp(self.scale *(1 - mapped_samples))
+    
+        return Beta(concentration1=self.alpha, concentration0=self.beta)
+        

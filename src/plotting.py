@@ -76,23 +76,40 @@ def plot_train_test_split(time_train, time_test, y_train, y_test):
     plt.legend()
     plt.show();
 
-
-def plot_gp(model, x_train, x_test, y_train, y_test, inducing_points = None, y_inducing = None, device=torch.device('cpu')):
+def plot_gp(model : gpytorch.models.GP,
+            x_train : torch.Tensor,
+            x_test : torch.Tensor,
+            y_train : torch.Tensor,
+            y_test : torch.Tensor,
+            y_inducing : torch.Tensor = None, 
+            pred_type : str = 'mean'):
     
     """ 
     Plot the GP model predictions
 
     Args:
-        model (gpytorch.models.ApproximateGP): GP model
-        x_train (torch.Tensor): training data
-        x_test (torch.Tensor): test data
-        inducing_points (torch.Tensor): inducing points  
+        model (gpytorch.models.GP): GP model
+        x_train (torch.Tensor): training time
+        x_test (torch.Tensor): test time
+        y_train (torch.Tensor): training data
+        y_test (torch.Tensor): test data
+        y_inducing (torch.Tensor, optional): inducing points. Defaults to None.
+        pred_type (str, optional): type of prediction to plot. Defaults to 'mean'.
     """
-    preds_train = model.predict(x_train, device=device)
-    preds_test = model.predict(x_test, device=device)
+    preds_train = model.predict(x_train, device=torch.device('cpu'))
+    preds_test = model.predict(x_test, device=torch.device('cpu'))
 
+    x_train = torch.arange(0, x_train.size(0))
+    x_test = torch.arange(x_train.size(0), x_train.size(0) + x_test.size(0))
+    
     plt.figure(figsize=(15, 6))
 
+    if y_inducing is not None:
+        inducing_points = torch.arange(0, y_inducing.size(0))
+        plt.scatter(inducing_points, y_inducing, color='k', marker='x', label='Observed Data', alpha=0.4)
+    else:
+        plt.scatter(x_train, y_train, color='k', marker='x', label='Observed Data', alpha=0.4)
+        
     with torch.no_grad():
 
         if isinstance(model.likelihood, gpytorch.likelihoods.GaussianLikelihood):
@@ -121,14 +138,6 @@ def plot_gp(model, x_train, x_test, y_train, y_test, inducing_points = None, y_i
         
         # scatter test data
         plt.scatter(x_test, y_test, color='k', alpha=0.4, marker='x')
-        
-        if isinstance(model, gpytorch.models.ApproximateGP):
-            inducing_points = model.variational_strategy.inducing_points
-            # scatter inducing points
-            plt.scatter(inducing_points, y_inducing, color='k', marker='x', label='Observed Data', alpha=0.4)
-        
-        else:
-            plt.scatter(x_train, y_train, color='k', marker='x', label='Observed Data', alpha=0.4)
        
     ymax = max(y_train.max(), y_test.max()) + 0.1
     
@@ -140,6 +149,24 @@ def plot_gp(model, x_train, x_test, y_train, y_test, inducing_points = None, y_i
     plt.ylabel('PV Production (0-1 Scale)', fontsize=13)
 
     plt.legend(loc='upper left')
+
+def plot_alpha_beta(model):
+    fig, ax = plt.subplots(figsize=(15, 6), sharey=False)
+    time = torch.arange(0, len(model.likelihood.alpha.mean(axis=0)))
+
+    ax.scatter(time, model.likelihood.beta.mean(axis=0), label='Beta', color='b', alpha=0.2)
+    ax2 = ax.twinx()
+    ax2.scatter(time, model.likelihood.alpha.mean(axis=0), label='Alpha', color='r', alpha=0.2)
+    ax.set_ylabel('Beta')
+    ax2.set_ylabel('Alpha')
+    ax.set_xlabel('Time')
+
+    # show legend for both axes
+    lines, labels = ax.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax2.legend(lines + lines2, labels + labels2, loc='upper right')
+
+    plt.show()
 
 def plot_acf_pacf(y):
     """
