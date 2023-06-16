@@ -300,6 +300,7 @@ class BetaGP(ApproximateGPBaseModel):
         variational_dist (gpytorch.variational.VariationalDistribution): variational distribution
         mean_module (gpytorch.means.Mean): mean module
         covar_module (gpytorch.kernels.Kernel): covariance module
+        likelihood (gpytorch.likelihoods.Likelihood): likelihood
         config (dict): dictionary of configuration parameters
         jitter (float, optional): jitter value for numerical stability. Defaults to 1e-4.
     """
@@ -308,11 +309,13 @@ class BetaGP(ApproximateGPBaseModel):
                  y : torch.Tensor,
                  mean_module : gpytorch.means.Mean,
                  covar_module : gpytorch.kernels.Kernel,
+                 likelihood : gpytorch.likelihoods.Likelihood,
                  config : dict,
                  jitter : float = 1e-4,
                  ):
         
         assert y.min() >= 0 and y.max() <= 1, 'y must be in the range [0, 1] for Beta likelihood'
+        assert X.size(0) == y.size(0), 'X and y must have same number of data points'
         
         # add perturbation to the data to avoid numerical issues for bounded outputs
         if y.min() == 0:
@@ -321,14 +324,15 @@ class BetaGP(ApproximateGPBaseModel):
         if y.max() == 1:
             y -= jitter
         
-        super(BetaGP, self).__init__(train_x=X,
-                                     likelihood=BetaLikelihood(), 
+        self.X = X
+        self.y = y
+        
+        super(BetaGP, self).__init__(train_x=self.X,
+                                     likelihood=likelihood, 
                                      mean_module=mean_module,
                                      covar_module=covar_module,
                                      config=config,
                                      jitter=jitter)
-        self.X = X
-        self.y = y
 
 ########################################
 ######  Kalman Filter Smoothing  #######
