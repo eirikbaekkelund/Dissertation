@@ -21,10 +21,29 @@ def load_data(folder_name, file_name):
     Returns:
         data (xarray): data
     """    
+    
     # get path to the remote data
-    remote_path = os.path.join(os.path.dirname(os.getcwd()), folder_name)
-    # check that file is in the remote path
+    # get absolute path to the folder
+    
+    remote_path = os.path.dirname(os.getcwd())
+    # make sure path contains 'Code/'
+    assert 'Code' in remote_path, 'Path does not contain Code/ folder'
+    print(remote_path)
+    # if anything follows 'Code/' in the path, remove it
+    
+    try:
+        if remote_path.split('Code/')[1] != '':
+            # remove everything after 'Code/'
+            remote_path = remote_path.split('Code/')[0] + f'Code/{folder_name}'
+        
+        # check that file is in the remote path
+    except IndexError:
+        remote_path += f'/{folder_name}'
+    
+    
+    
     assert file_name in os.listdir(remote_path)
+    
     file_path = os.path.join(remote_path, file_name)
     
     print('==> Loading data')
@@ -468,4 +487,7 @@ class PVDataLoader:
             return self.time_tensor.cuda(), self.y_tensor.cuda()
         
         return self.time_tensor, self.y_tensor
-        
+    
+
+if __name__ == '__main__':
+    load_data(folder_name='pv_data', file_name='pv_data_clean.csv')

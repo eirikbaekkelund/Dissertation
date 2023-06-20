@@ -46,18 +46,20 @@ def plot_grid(df, COORDS, RADIUS):
 
     plt.show()
 
-def plot_train_test_split(time_train, time_test, y_train, y_test):
+def plot_train_test_split(y_train, y_test):
     """ 
     Plot the train-test split of the data
 
     Args:
-        time_train (torch.Tensor): training time
-        time_test (torch.Tensor): test time
+
         y_train (torch.Tensor): training data
         y_test (torch.Tensor): test data
     """
     # set figure size
     plt.figure(figsize=(15, 6))
+
+    time_train = torch.arange(0, len(y_train))
+    time_test = torch.arange(len(y_train), len(y_train) + len(y_test))
 
     # plot the training and test data
     plt.plot(time_train, y_train, color='b', alpha=0.4)
@@ -73,6 +75,7 @@ def plot_train_test_split(time_train, time_test, y_train, y_test):
 
     plt.xlabel('Time (5 min intervals between 8am and 4pm)', fontsize=13)
     plt.ylabel('PV Production (0-1 Scale)', fontsize=13)
+    
     plt.legend()
     plt.show();
 

@@ -2,11 +2,10 @@ from typing import Any, Optional
 import math
 import torch
 from torch import Tensor
-from torch.distributions import Beta
 from gpytorch.constraints import Interval, Positive
 from gpytorch.priors import Prior
 from gpytorch.likelihoods import _OneDimensionalLikelihood
-
+from gpytorch.distributions import base_distributions
 
 class BetaLikelihood(_OneDimensionalLikelihood):
     """
@@ -63,13 +62,20 @@ class BetaLikelihood(_OneDimensionalLikelihood):
             value = torch.as_tensor(value).to(self.raw_scale)
         self.initialize(raw_scale=self.raw_scale_constraint.inverse_transform(value))    
 
-    def forward(self, function_samples: Tensor, *args: Any, **kwargs: Any) -> Beta:
+    # TODO explore with set of scales
+    
+    def forward(self, function_samples, *args, **kwargs):
+		
+        mixture = torch.tanh(function_samples) / 2 + 0.5
+        self.scale = 80
+        
+        self.alpha = mixture * self.scale
+        self.beta = self.scale - self.alpha
         
         eps = 1e-6
-        mapped_samples = torch.tanh(function_samples) / 2 + 0.5 + eps
-
-        self.alpha = self.scale * mapped_samples 
-        self.beta = torch.exp(self.scale *(1 - mapped_samples))
-    
-        return Beta(concentration1=self.alpha, concentration0=self.beta)
+        
+        self.alpha = self.alpha + eps
+        self.beta = self.beta + eps
+        
+        return base_distributions.Beta(concentration1=self.alpha, concentration0=self.beta)
         

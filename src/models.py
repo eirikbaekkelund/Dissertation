@@ -113,7 +113,8 @@ class ExactGPModel(ExactGP):
         self.likelihood.to(device)
 
         with torch.no_grad():
-            preds = self.likelihood(self(X))
+            
+            preds = self.likelihood(self(X)) 
             
         return preds
     
