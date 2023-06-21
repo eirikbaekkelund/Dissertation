@@ -136,7 +136,7 @@ def plot_gp(model : gpytorch.models.GP,
             lower_train, upper_train = np.percentile(preds_train.mean, q=[5, 95], axis=0)
             plt.fill_between(x_train, lower_train, upper_train, alpha=0.1, color='b')
             
-            lower_test, upper_test = np.percentile(preds_test.mean, q=[2.5, 97.5], axis=0)
+            lower_test, upper_test = np.percentile(preds_test.mean, q=[5, 95], axis=0)
             plt.fill_between(x_test, lower_test, upper_test, alpha=0.1, color='r')
         
         # scatter test data
