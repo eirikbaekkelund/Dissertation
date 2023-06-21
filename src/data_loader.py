@@ -28,19 +28,16 @@ def load_data(folder_name, file_name):
     remote_path = os.path.dirname(os.getcwd())
     # make sure path contains 'Code/'
     assert 'Code' in remote_path, 'Path does not contain Code/ folder'
-    print(remote_path)
-    # if anything follows 'Code/' in the path, remove it
     
+    # if anything follows 'Code/' in the path, remove it
     try:
         if remote_path.split('Code/')[1] != '':
             # remove everything after 'Code/'
             remote_path = remote_path.split('Code/')[0] + f'Code/{folder_name}'
         
-        # check that file is in the remote path
+    # check that file is in the remote path
     except IndexError:
         remote_path += f'/{folder_name}'
-    
-    
     
     assert file_name in os.listdir(remote_path)
     

@@ -254,7 +254,7 @@ class ApproximateGPBaseModel(ApproximateGP):
         with torch.no_grad():
            
             if not isinstance(self.likelihood, GaussianLikelihood):
-                with gpytorch.settings.num_likelihood_samples(100):
+                with gpytorch.settings.num_likelihood_samples(30):
                     preds = self.likelihood(self(X)) 
             else:
                 preds = self.likelihood(self(X))
