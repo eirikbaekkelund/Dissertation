@@ -204,6 +204,28 @@ def get_location_maps(df_location, n_systems):
 
     return lats, longs
 
+def periodic_mapping(time_steps, day_min, day_max, minute_interval):
+    """ 
+    Create a periodic mapping of time steps to a sine function to 
+    capture the periodicity of the data.
+
+    Args:
+        time_steps (torch.Tensor): time steps to map
+        day_min (int): minimum time of the day
+        day_max (int): maximum time of the day
+        minute_interval (int): interval between time steps in minutes
+
+    Returns:
+        torch.Tensor: mapped time steps to sine function
+    """
+    total_minutes = (day_max - day_min) * 60  # Total number of minutes in the specified time range
+    normalized_minutes = (time_steps * minute_interval) % total_minutes  # Normalize time steps to minutes
+
+    # Apply periodic mapping using sine function
+    mapped_values = torch.sin(2 * torch.pi * normalized_minutes / total_minutes)
+    
+    return mapped_values
+
 def save_csv(df, folder_name, file_name):
     """ 
     Save data as csv file

@@ -128,15 +128,33 @@ def plot_gp(model : gpytorch.models.GP,
             plt.fill_between(x_test, lower, upper, color='r', alpha=0.1)
         
         else:
-            # plot the means
-            plt.plot(x_train, preds_train.mean.mean(axis=0), color='b')            
-            plt.plot(x_test, preds_test.mean.mean(axis=0), color='r')
+            preds_train = preds_train.sample((50,))
+            preds_test = preds_test.sample((50,))
+
+            mean_preds_train = preds_train.mean(axis=0)
+            mean_preds_test = preds_test.mean(axis=0)
+
+            median_preds_train = preds_train.median(axis=0).values
+            median_preds_test = preds_test.median(axis=0).values
+            
+
+            plt.plot(x_train, mean_preds_train.mean(axis=0), color='b', label='Mean')           
+            plt.plot(x_test, mean_preds_test.mean(axis=0), color='b')
+
+            plt.plot(x_train, median_preds_train.mean(axis=0), color='r', label='Median')
+            plt.plot(x_test, median_preds_test.mean(axis=0), color='r')
 
             # plot the confidence regions
-            lower_train, upper_train = np.percentile(preds_train.mean, q=[5, 95], axis=0)
-            plt.fill_between(x_train, lower_train, upper_train, alpha=0.1, color='b')
+            lower_train, upper_train = np.percentile(mean_preds_train, q=[2.5, 97.5], axis=0)
+            plt.fill_between(x_train, lower_train, upper_train, alpha=0.1, color='b', label='95% Confidence Interval (Mean)')
             
-            lower_test, upper_test = np.percentile(preds_test.mean, q=[5, 95], axis=0)
+            lower_test, upper_test = np.percentile(mean_preds_test, q=[2.5, 97.5], axis=0)
+            plt.fill_between(x_test, lower_test, upper_test, alpha=0.1, color='b')
+
+            lower_train, upper_train = np.percentile(median_preds_train, q=[2.5, 97.5], axis=0)
+            plt.fill_between(x_train, lower_train, upper_train, alpha=0.1, color='r', label='95% Confidence Interval (Median)')
+
+            lower_test, upper_test = np.percentile(median_preds_test, q=[2.5, 97.5], axis=0)
             plt.fill_between(x_test, lower_test, upper_test, alpha=0.1, color='r')
         
         # scatter test data
@@ -152,6 +170,8 @@ def plot_gp(model : gpytorch.models.GP,
     plt.ylabel('PV Production (0-1 Scale)', fontsize=13)
 
     plt.legend(loc='upper left')
+
+    plt.show()
 
 def plot_alpha_beta(model):
     fig, ax = plt.subplots(figsize=(15, 6), sharey=False)
