@@ -2,9 +2,12 @@ import torch
 import gpytorch
 import optuna
 
-from gpytorch.kernels import MaternKernel, ScaleKernel
+from gpytorch.kernels import MaternKernel, PeriodicKernel, ScaleKernel, ProductKernel, AdditiveKernel
 from src.models import BetaGP, ExactGPModel
 from src.beta_likelihood import BetaLikelihood_MeanParametrization
+
+# set seed for reproducibility
+torch.manual_seed(42)
 
 class HyperParameterOptimization:
     """ 
@@ -36,13 +39,13 @@ class HyperParameterOptimization:
                              trial : optuna.trial.Trial
                              ):
         """ 
-        Sample hyperparameters for the model.
+        Sample hyperparameters for the model using a Matern kernel.
 
         Args:
             trial (optuna.trial.Trial): Optuna
         
         Returns:
-            dict: dictionary of hyperparameters
+            kernel (gpytorch.kernels.Kernel): kernel of the model
         """
         
         # sample hyperparameters
@@ -50,19 +53,77 @@ class HyperParameterOptimization:
         lengthscale_shape = trial.suggest_float('lengthscale_shape', 1, 10, step=1)
         lengthscale_rate = trial.suggest_float('lengthscale_rate', 1, 10, step=1)
 
-        signal_bound = trial.suggest_float('signal_bound', 0.01, 0.9, step=0.05)
-        
+        signal_shape = trial.suggest_float('signal_matern_shape', 1, 10, step=1)
+        signal_rate = trial.suggest_float('signal_matern_rate', 1, 10, step=1)
+
         # create kernel
         matern = MaternKernel(nu=3/2,
                               lengthscale_prior=gpytorch.priors.GammaPrior(lengthscale_shape, lengthscale_rate),
                               lengthscale_constraint=gpytorch.constraints.Positive()
                                 )
         scaled_matern = ScaleKernel(matern,
-                                    outputscale_prior=gpytorch.priors.GammaPrior(5, 2),
-                                    outputscale_constraint=gpytorch.constraints.Interval(signal_bound, 1)
+                                    outputscale_prior=gpytorch.priors.GammaPrior(signal_shape, signal_rate),
+                                    outputscale_constraint=gpytorch.constraints.Positive()
                                     )
         return scaled_matern
     
+    def sample_params_periodic(self,
+                               trial : optuna.trial.Trial
+                              ):
+        """
+        Sample hyperparameters for the model using a periodic kernel.
+
+        Args:
+            trial (optuna.trial.Trial): Optuna
+        
+        Returns:
+            kernel (gpytorch.kernels.Kernel): kernel of the model
+        """
+        # sample hyperparameters
+        lengthscale_shape = trial.suggest_float('lengthscale_shape', 1, 10, step=1)
+        lengthscale_rate = trial.suggest_float('lengthscale_rate', 1, 10, step=1)
+
+        period_shape = trial.suggest_float('period_shape', 1, 10, step=1)
+        period_rate = trial.suggest_float('period_rate', 1, 10, step=1)
+
+        signal_periodic_shape = trial.suggest_float('signal_periodic_shape', 1, 10, step=1)
+        signal_periodic_rate = trial.suggest_float('signal_periodic_rate', 1, 10, step=1)
+
+
+
+        periodic = PeriodicKernel(lengthscale_prior=gpytorch.priors.GammaPrior(lengthscale_shape, lengthscale_rate),
+                                    lengthscale_constraint=gpytorch.constraints.Positive(),
+                                    period_prior=gpytorch.priors.GammaPrior(period_shape, period_rate),
+                                    period_constraint=gpytorch.constraints.Positive()
+                                    )
+        scaled_periodic = ScaleKernel(periodic,
+                                    outputscale_prior=gpytorch.priors.GammaPrior(signal_periodic_shape, signal_periodic_rate),
+                                    outputscale_constraint=gpytorch.constraints.Positive()
+                                    )
+        return scaled_periodic
+    
+    
+    def sample_params_quasi_periodic(self,
+                                     trial : optuna.trial.Trial
+                                    ):
+        """
+        Sample hyperparameters for the model using a quasi-periodic kernel.
+
+        Args:
+            trial (optuna.trial.Trial): Optuna
+        
+        Returns:
+            kernel (gpytorch.kernels.Kernel): kernel of the model
+        """
+        matern = self.sample_params_matern(trial)
+        periodic = self.sample_params_periodic(trial)
+
+        product_kernel = ProductKernel(matern, periodic)
+
+        quasi_periodic = AdditiveKernel(product_kernel, matern)
+
+        return quasi_periodic
+        
     def sample_params_likelihood(self,
                                  trial : optuna.trial.Trial
                                 ):
@@ -75,13 +136,13 @@ class HyperParameterOptimization:
         Returns:
             likelihood (gpytorch.likelihoods.Likelihood): likelihood of the model
         """
-        likelihood_scale = trial.suggest_float('likelihood_scale', 5, 100, step=5)
-        likelihood_correcting_scale = trial.suggest_float('likelihood_correcting_scale', 1, 5, step=1)
+        likelihood_scale = trial.suggest_float('likelihood_scale', 1, 30, step=5)
+        likelihood_correcting_scale = trial.suggest_float('likelihood_correcting_scale', 1, 3, step=1)
         
         likelihood = BetaLikelihood_MeanParametrization(scale=likelihood_scale,
                                                         correcting_scale=likelihood_correcting_scale,
-                                                        lower_bound=0.03,
-                                                        upper_bound=0.97)
+                                                        lower_bound=0.2,
+                                                        upper_bound=0.9)
                                                         
         return likelihood                                      
 
@@ -107,7 +168,6 @@ class HyperParameterOptimization:
             'type': 'stochastic',
             'name': 'mean_field',
             'num_inducing_points': self.x_train.size(0),
-            # TODO maybe change mean_init_std to a prior
             'mean_init_std': 1,
         }
         
@@ -150,7 +210,7 @@ class HyperParameterOptimization:
             model = ExactGPModel(**inputs)
         
         #n_iter = trial.suggest_int('n_iter', 100, 500, step=100)
-        lr = trial.suggest_float('lr', 0.01, 0.5)
+        lr = trial.suggest_float('lr', 0.1, 0.4, step=0.1)
 
         model.fit(n_iter=300, 
                   lr=lr, 
@@ -167,11 +227,15 @@ class HyperParameterOptimization:
             nlpd = gpytorch.metrics.negative_log_predictive_density(trained_pred_dist, self.y_test)
         
         # if negative infinity, replace with 0, happens when the 
-        # likelihood is close to 0 or 1 where we have scaled the beta mean
+        # likelihood is close to 0 or 1 where we have scaled the beta mean - this should be met with a warning
         
-        nlpd = torch.where(torch.isinf(nlpd), torch.zeros_like(nlpd), nlpd)
+        if torch.isinf(nlpd).any():
+            print('WARNING: negative log predictive density is -infinity, highly peaked likelihood')
 
+        nlpd = torch.where(torch.isinf(nlpd), torch.zeros_like(nlpd), nlpd)
         # msll = gpytorch.metrics.mean_standardized_log_loss(self.y_test, trained_pred_dist.mean)
+        
+        # return median to avoid outliers
         return nlpd.median()
     
     def get_loss(self,
@@ -198,7 +262,8 @@ class HyperParameterOptimization:
     def objective(self,
                   trial : optuna.trial.Trial,
                   config : dict,
-                  jitter : float
+                  jitter : float,
+                  kernel: str
                  ):
         """ 
         Objective function for Optuna.
@@ -209,13 +274,23 @@ class HyperParameterOptimization:
         Returns:
             float: negative log predictive density
         """
-        kernel = self.sample_params_matern(trial)
+        assert kernel in ['matern', 'periodic', 'quasi_periodic']
+        
+        
+        if kernel == 'matern':
+            kernel = self.sample_params_matern(trial)
+        elif kernel == 'periodic':
+            kernel = self.sample_params_periodic(trial)
+        elif kernel == 'quasi_periodic':
+            kernel = self.sample_params_quasi_periodic(trial)
+
         likelihood = self.sample_params_likelihood(trial)
         
         if len(self.y_train.shape) > 1: 
             
             losses = []
             
+            # get loss for each output if several time series
             for i in range(self.y_train.shape[1]):
                 loss = self.get_loss(trial, config, kernel, likelihood, jitter, i)
                 losses.append(loss)
