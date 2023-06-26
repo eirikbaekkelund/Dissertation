@@ -50,8 +50,8 @@ class HyperParameterOptimization:
         
         # sample hyperparameters
         
-        lengthscale_shape = trial.suggest_float('lengthscale_shape', 1, 10, step=1)
-        lengthscale_rate = trial.suggest_float('lengthscale_rate', 1, 10, step=1)
+        lengthscale_shape = trial.suggest_float('matern_L_shape', 1, 10, step=1)
+        lengthscale_rate = trial.suggest_float('matern_L_rate', 1, 10, step=1)
 
         signal_shape = trial.suggest_float('signal_matern_shape', 1, 10, step=1)
         signal_rate = trial.suggest_float('signal_matern_rate', 1, 10, step=1)
@@ -80,11 +80,11 @@ class HyperParameterOptimization:
             kernel (gpytorch.kernels.Kernel): kernel of the model
         """
         # sample hyperparameters
-        lengthscale_shape = trial.suggest_float('lengthscale_shape', 1, 10, step=1)
-        lengthscale_rate = trial.suggest_float('lengthscale_rate', 1, 10, step=1)
+        lengthscale_shape = trial.suggest_float('periodic_L_shape', 1, 10, step=1)
+        lengthscale_rate = trial.suggest_float('period_L_rate', 1, 10, step=1)
 
-        period_shape = trial.suggest_float('period_shape', 1, 10, step=1)
-        period_rate = trial.suggest_float('period_rate', 1, 10, step=1)
+        period_shape = trial.suggest_float('period_P_shape', 1, 10, step=1)
+        period_rate = trial.suggest_float('period__P_rate', 1, 10, step=1)
 
         signal_periodic_shape = trial.suggest_float('signal_periodic_shape', 1, 10, step=1)
         signal_periodic_rate = trial.suggest_float('signal_periodic_rate', 1, 10, step=1)
@@ -136,7 +136,7 @@ class HyperParameterOptimization:
         Returns:
             likelihood (gpytorch.likelihoods.Likelihood): likelihood of the model
         """
-        likelihood_scale = trial.suggest_float('likelihood_scale', 1, 30, step=5)
+        likelihood_scale = trial.suggest_int('likelihood_scale', 1, 30, step=5)
         likelihood_correcting_scale = trial.suggest_float('likelihood_correcting_scale', 1, 3, step=1)
         
         likelihood = BetaLikelihood_MeanParametrization(scale=likelihood_scale,

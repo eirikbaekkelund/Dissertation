@@ -346,7 +346,7 @@ class KalmanFilterSmoother(nn.Module):
     a linear Gaussian state space model.
     
     This is based on the work in: 
-    https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=5711863
+    https://ieeexplore.ieee.org/document/5589113
 
     Args:
         F (torch.Tensor): transition matrix
