@@ -250,6 +250,8 @@ class ApproximateGPBaseModel(ApproximateGP):
            
             if not isinstance(self.likelihood, GaussianLikelihood):
                 with gpytorch.settings.num_likelihood_samples(30):
+                    # TODO if beta likelihood then predict using the mode
+                    # the mode should give the most likely value for the prediction
                     preds = self.likelihood(self(X)) 
             else:
                 preds = self.likelihood(self(X))
@@ -489,3 +491,5 @@ class KalmanFilterSmoother(nn.Module):
             covariances.append(Pnew)
        
         return torch.flip(torch.stack(means), [0]), torch.flip(torch.stack(covariances), [0])
+    
+# TODO implement KFGP with beta likelihood
