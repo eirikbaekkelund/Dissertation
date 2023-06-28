@@ -493,3 +493,9 @@ class KalmanFilterSmoother(nn.Module):
         return torch.flip(torch.stack(means), [0]), torch.flip(torch.stack(covariances), [0])
     
 # TODO implement KFGP with beta likelihood
+
+########################################
+##########  Latent Force Model  ########
+########################################
+
+# TODO implement Latent Force Model
