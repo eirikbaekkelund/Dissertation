@@ -1,13 +1,11 @@
+from abc import ABC
 import torch
 import gpytorch
-import optuna
-from torch import nn
 
 from gpytorch.models import ExactGP, ApproximateGP
 from gpytorch.variational import VariationalStrategy
 from gpytorch.likelihoods import GaussianLikelihood
 from gpytorch.distributions import MultivariateNormal
-from gpytorch.kernels import MaternKernel, ScaleKernel
 
 from src.variational_dist import VariationalBase
 from src.beta_likelihood import BetaLikelihood_MeanParametrization
@@ -127,13 +125,10 @@ class ExactGPModel(ExactGP):
 ########################################
 
 # TODO maybe use UnwhitenedVariationalStrategy instead of VariationalStrategy for having exact inducing points
-# TODO add option for covariance function
-# TODO make work for additive and product kernels
 # TODO possibly add natural gradients
-# TODO test MeanFieldVariationalDistribution
-# TODO test different kernels
 # TODO config to work for unwhitened, natural, and tril natural
 # TODO create fit function for natural variational distribution
+# TODO add X and y as input params to ApproximateGPBaseModel and remove BetaGP and GaussianGP
 
 class ApproximateGPBaseModel(ApproximateGP):
     """ 
@@ -150,7 +145,9 @@ class ApproximateGPBaseModel(ApproximateGP):
         variational_distribution (gpytorch.variational.VariationalDistribution): variational distribution
     """
 
-    def __init__(self, train_x : torch.Tensor, 
+    def __init__(self, 
+                 X : torch.Tensor, 
+                 y : torch.Tensor,
                  likelihood : gpytorch.likelihoods.Likelihood, 
                  mean_module : gpytorch.means.Mean,
                  covar_module : gpytorch.kernels.Kernel,
@@ -158,9 +155,24 @@ class ApproximateGPBaseModel(ApproximateGP):
                  jitter : float = 1e-4,
                  learn_inducing_locations : bool = False
                  ):
+        
+        if isinstance(likelihood, gpytorch.likelihoods.BetaLikelihood):
+            assert y.min() >= 0 and y.max() <= 1, 'y must be in the range [0, 1] for Beta likelihood'
+        assert X.size(0) == y.size(0), 'X and y must have same number of data points'
+        
+        # add perturbation to the data to avoid numerical issues for bounded outputs
+        if y.min() == 0:
+            y += jitter
+        
+        if y.max() == 1:
+            y -= jitter
+        
+        self.X = X
+        self.y = y
+        
         variational_distribution = VariationalBase(config).variational_distribution
         variational_strategy = VariationalStrategy(self, 
-                                                   inducing_points=train_x, 
+                                                   inducing_points=X, 
                                                    variational_distribution=variational_distribution,
                                                    learn_inducing_locations=learn_inducing_locations,
                                                    jitter_val=jitter) 
@@ -170,6 +182,15 @@ class ApproximateGPBaseModel(ApproximateGP):
         self.mean_module = mean_module
         self.covar_module = covar_module
         self.likelihood = likelihood
+    
+    def get_inducing_points(self):
+        """ 
+        Get inducing points
+
+        Returns:
+            torch.Tensor: inducing points
+        """
+        return self.variational_strategy.inducing_points
     
     def forward(self, x):
         """ 
@@ -258,244 +279,20 @@ class ApproximateGPBaseModel(ApproximateGP):
             
         return preds
 
-class GaussianGP(ApproximateGPBaseModel):
-    """ 
-    Stochastic Variational Inference GP model for regression using
-    inducing points for scalability and a Gaussian likelihood for unbounded outputs
-
-    Args:
-        inducing_points (torch.Tensor): inducing points
-        variational_dist (gpytorch.variational.VariationalDistribution): variational distribution
-        mean_module (gpytorch.means.Mean): mean module
-        covar_module (gpytorch.kernels.Kernel): covariance module
-    """
-    def __init__(self, 
-                 X : torch.Tensor, 
-                 y : torch.Tensor, 
-                 mean_module : gpytorch.means.Mean,
-                 covar_module : gpytorch.kernels.Kernel,
-                 config : dict,
-                 jitter : float = 1e-6,
-                 ):
-        
-        super(GaussianGP, self).__init__(train_x=X, 
-                                         likelihood=GaussianLikelihood(), 
-                                         mean_module=mean_module,
-                                         covar_module=covar_module,
-                                         config=config,
-                                         jitter=jitter)
-        self.X = X
-        self.y = y
-
-class BetaGP(ApproximateGPBaseModel):
-    """ 
-    Stochastic Variational Inference GP model for regression using
-    inducing points for scalability and a Beta likelihood for bounded outputs
-    in the range [0, 1]
-
-    Args:
-        X (torch.Tensor): inducing points input data
-        y (torch.Tensor): inducing points target data
-        variational_dist (gpytorch.variational.VariationalDistribution): variational distribution
-        mean_module (gpytorch.means.Mean): mean module
-        covar_module (gpytorch.kernels.Kernel): covariance module
-        likelihood (gpytorch.likelihoods.Likelihood): likelihood
-        config (dict): dictionary of configuration parameters
-        jitter (float, optional): jitter value for numerical stability. Defaults to 1e-4.
-    """
-    def __init__(self, 
-                 X : torch.Tensor, 
-                 y : torch.Tensor,
-                 mean_module : gpytorch.means.Mean,
-                 covar_module : gpytorch.kernels.Kernel,
-                 likelihood : gpytorch.likelihoods.Likelihood,
-                 config : dict,
-                 jitter : float = 1e-4,
-                 ):
-        
-        assert y.min() >= 0 and y.max() <= 1, 'y must be in the range [0, 1] for Beta likelihood'
-        assert X.size(0) == y.size(0), 'X and y must have same number of data points'
-        
-        # add perturbation to the data to avoid numerical issues for bounded outputs
-        if y.min() == 0:
-            y += jitter
-        
-        if y.max() == 1:
-            y -= jitter
-        
-        self.X = X
-        self.y = y
-        
-        super(BetaGP, self).__init__(train_x=self.X,
-                                     likelihood=likelihood, 
-                                     mean_module=mean_module,
-                                     covar_module=covar_module,
-                                     config=config,
-                                     jitter=jitter)
-
-########################################
-######  Kalman Filter Smoothing  #######
-########################################
-
-# TODO run tests and make sure it works
-# TODO add option for exogenous variables
-# TODO check if this works for multivariate time series
-# TODO set up for device agnostic code
-
-class KalmanFilterSmoother(nn.Module):
-    """ 
-    Class for performing Kalman filter smoothing on 
-    a linear Gaussian state space model.
-    
-    This is based on the work in: 
-    https://ieeexplore.ieee.org/document/5589113
-
-    Args:
-        F (torch.Tensor): transition matrix
-        Q (torch.Tensor): process noise covariance matrix
-        H (torch.Tensor): observation matrix
-        R (torch.Tensor): observation noise covariance matrix
-    """
-    def __init__(self, F, Q, H, R):
-        self.F = F
-        self.Q = Q
-        self.H = H
-        self.R = R
-
-    def _predict(self, x, P):
-        """ 
-        Perform the prediction step of the Kalman filter.
-        This should be called before the filtering update step.
-
-        Args:
-            x: torch.Tensor of shape (d,) where d is the spatial dimension
-            P: torch.Tensor of shape (d, d)
-        
-        Returns:
-            xnew: torch.Tensor of shape (d,) where d is the spatial dimension
-            Pnew: torch.Tensor of shape (d, d)
-        """
-
-        F = self.F
-        Q = self.Q
-        return torch.matmul(F, x), torch.matmul(torch.matmul(F, P), F.t()) + Q
-
-    def _filter_update(self, x, P, y):
-        """ 
-        Perform the filtering update step.
-        This should be called after applying the forward pass.
-
-        Args:
-            x: torch.Tensor of shape (d,) where d is the spatial dimension
-            P: torch.Tensor of shape (d, d)
-            y: torch.Tensor of shape (d,) where d is the spatial dimension
-        
-        Returns:
-            xnew: torch.Tensor of shape (d,) where d is the spatial dimension
-            Pnew: torch.Tensor of shape (d, d)
-        """
-
-        R = self.R
-        H = self.H
-       
-        # Compute Kalman gain matrix
-       
-        if not torch.isnan(y):
-            S = torch.matmul(torch.matmul(H, P), H.t()) + R
-            chol = torch.cholesky(S)
-            
-            Kt = torch.cholesky_solve(H @ P, chol)
-            Hx = torch.matmul(H, x)
-       
-            return x + torch.matmul(Kt, y - Hx).t(), P - torch.matmul(torch.matmul(Kt, S.t()), Kt)
-       
-        else:
-            return x, P
-
-    def _smoother_update(self, x_now, x_next, x_forecast, P_now, P_next, P_forecast):
-        """ 
-        Perform the smoothing update step. 
-        This should be called after applying the forward pass.
-
-        Args:
-            x_now: torch.Tensor of shape (d,) where d is the spatial dimension
-            x_next: torch.Tensor of shape (d,) where d is the spatial dimension
-            x_forecast: torch.Tensor of shape (d,) where d is the spatial dimension
-            P_now: torch.Tensor of shape (d, d)
-            P_next: torch.Tensor of shape (d, d)
-            P_forecast: torch.Tensor of shape (d, d)
-
-        Returns:
-            xnew: torch.Tensor of shape (d,) where d is the spatial dimension
-            Pnew: torch.Tensor of shape (d, d)
-        """
-
-        F = self.F
-        
-        # Compute smoothing gain
-        chol = torch.cholesky(P_forecast)
-        Jt = torch.cholesky_solve(F @ P_now, chol)
-        
-        # Update
-        xnew = x_now + torch.matmul(Jt, x_next - x_forecast).t()
-        Pnew = P_now + torch.matmul(torch.matmul(Jt, P_next - P_forecast), Jt.t())
-        
-        return xnew, Pnew
-
-    def forward_pass(self, x, P, y_list):
-        """ 
-        Calling the forward pass gives us the filtering distribution.
-         Args:
-            x: torch.Tensor of shape (d,) where d is the spatial dimension
-            P: torch.Tensor of shape (d, d)
-            y_list: torch.Tensor of shape (N, d) containing a list of observations at N timepoints.
-                    Note that when there is no observation at time n, then set y_list[n] = torch.nan
-        """
-        means = []
-        covariances = []
-        
-        for y in y_list:
-            
-            x, P = self._filter_update(x, P, y)
-            
-            means.append(x)
-            covariances.append(P)
-            
-            x, P = self._predict(x, P)
-       
-        return torch.stack(means), torch.stack(covariances)
-
-    def backward_pass(self, x, P):
-        """ 
-        Calling the backward pass gives us the smoothing distribution. This should be called after applying the forward pass.
-        
-        Args:
-            x: torch.Tensor of shape (N, d) where N is the number of forward time steps and d is the spatial dimension
-            P: torch.Tensor of shape (N, d, d)
-        
-        Returns:
-            means: torch.Tensor of shape (N, d) where N is the number of forward time steps and d is the spatial dimension
-            covariances: torch.Tensor of shape (N, d, d)
-        """        
-        N = x.shape[0]
-       
-        means = [x[-1]]
-        covariances = [P[-1]]
-        
-        for n in range(N - 2, -1, -1):
-            # Forecast
-            xf, Pf = self._predict(x[n], P[n])
-            # Update
-            xnew, Pnew = self._smoother_update(x[n], x[n + 1], xf, P[n], P[n + 1], Pf)
-            means.append(xnew)
-            covariances.append(Pnew)
-       
-        return torch.flip(torch.stack(means), [0]), torch.flip(torch.stack(covariances), [0])
-    
-# TODO implement KFGP with beta likelihood
-
 ########################################
 ##########  Latent Force Model  ########
 ########################################
 
 # TODO implement Latent Force Model
+
+class VariationalLatentForceModel(ABC):
+    """ 
+    Latent Force Model (LFM) for modelling dynamics of a system using a GP.
+    """
+    def __init__(self,
+                 model: gpytorch.models.ApproximateGP
+    ):
+        self.model = model
+        pass 
+
+

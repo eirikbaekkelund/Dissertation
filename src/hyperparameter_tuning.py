@@ -3,7 +3,7 @@ import gpytorch
 import optuna
 
 from gpytorch.kernels import MaternKernel, PeriodicKernel, ScaleKernel, ProductKernel, AdditiveKernel
-from src.models import BetaGP, ExactGPModel
+from src.models import ApproximateGPBaseModel, ExactGPModel
 from src.beta_likelihood import BetaLikelihood_MeanParametrization
 
 # set seed for reproducibility
@@ -28,7 +28,7 @@ class HyperParameterOptimization:
                  x_test : torch.Tensor,
                  y_test : torch.Tensor,
                 ):
-        assert model in ['beta', 'exact']
+        assert model in ['approximate', 'exact'], 'Model must be either approximate or exact'
         self.model = model
         self.x_train = x_train
         self.y_train = y_train
@@ -204,10 +204,12 @@ class HyperParameterOptimization:
         Returns:
             float: negative log likelihood
         """
-        if self.model == 'beta':
-            model = BetaGP(**inputs)
-        elif self.model == 'exact':
+        if self.model == 'approximate':
+            model = ApproximateGPBaseModel(**inputs)
+        
+        if self.model == 'exact':
             model = ExactGPModel(**inputs)
+        
         
         #n_iter = trial.suggest_int('n_iter', 100, 500, step=100)
         lr = trial.suggest_float('lr', 0.1, 0.4, step=0.1)

@@ -28,10 +28,10 @@ class VariationalBase:
         Args:
             config (dict): configuration of the GP model
         """
-        del config['type']
-        del config['name']
         
-        return config
+        _config = {key : value for key, value in config.items() if key not in ['type', 'name']}
+        
+        return _config
         
     def get_stochastic(self, config):
         """ 
