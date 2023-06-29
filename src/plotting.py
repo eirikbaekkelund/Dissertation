@@ -120,7 +120,7 @@ def plot_gp(model, x_train, x_test, y_train, y_test, y_inducing=None, pred_type=
         y_inducing (torch.Tensor): inducing points
         pred_type (str): type of prediction to plot
     """
-    assert pred_type in ['mean', 'median', 'both', 'none'], 'pred_type must be one of [mean, median, both, none]'
+    assert pred_type in ['mean', 'median', 'all', 'none'], 'pred_type must be one of [mean, median, all, none]'
     assert isinstance(model.likelihood, gpytorch.likelihoods.BetaLikelihood) or isinstance(model.likelihood, gpytorch.likelihoods.GaussianLikelihood), 'Unknown likelihood'
     
     # time points for the training and test data
@@ -139,33 +139,6 @@ def plot_gp(model, x_train, x_test, y_train, y_test, y_inducing=None, pred_type=
             plt.scatter(inducing_points, y_inducing, color='k', marker='x', label='Observed Data', alpha=0.4)
         else:
             plt.scatter(time_train, y_train, color='k', marker='x', label='Observed Data', alpha=0.4)
-    
-    def plot_beta_mode_predictions():
-        """ 
-        Plots the mean and confidence intervals of the beta distribution
-        from MC samples using the mode of the distribution
-        """
-        model.predict(x_train, device=torch.device('cpu'))
-        alphas_train = model.likelihood.alpha
-        betas_train = model.likelihood.beta
-        
-        modes_train = mode_beta_dist(alphas_train, betas_train)
-        mode_mean_train = np.mean(modes_train, axis=0)
-        mode_percentile_train = np.percentile(modes_train, q=[2.5, 97.5], axis=0)
-
-        plt.plot(time_train, mode_mean_train, color='g', label='Mode')
-        plt.fill_between(time_train, mode_percentile_train[0], mode_percentile_train[1], color='g', alpha=0.1, label='95% Confidence Interval (Mode)')
-
-        model.predict(x_test, device=torch.device('cpu'))
-        alphas_test = model.likelihood.alpha
-        betas_test = model.likelihood.beta
-
-        modes_test = mode_beta_dist(alphas_test, betas_test)
-        mode_mean_test = np.mean(modes_test, axis=0)
-        mode_percentile_test = np.percentile(modes_test, q=[2.5, 97.5], axis=0)
-
-        plt.plot(time_test, mode_mean_test, color='g')
-        plt.fill_between(time_test, mode_percentile_test[0], mode_percentile_test[1], color='g', alpha=0.1)
     
     def plot_gaussian_predictions():
         """ 
@@ -230,22 +203,51 @@ def plot_gp(model, x_train, x_test, y_train, y_test, y_inducing=None, pred_type=
             lower_test, upper_test = np.percentile(median_preds_test, q=[2.5, 97.5], axis=0)
             plt.fill_between(time_test, lower_test, upper_test, alpha=0.1, color='r')
         
+        def plot_mode():
+            """ 
+            Plots the mean and confidence intervals of the beta distribution
+            from MC samples using the mode of the distribution
+            """
+            model.predict(x_train, device=torch.device('cpu'))
+            alphas_train = model.likelihood.alpha
+            betas_train = model.likelihood.beta
+            
+            modes_train = mode_beta_dist(alphas_train, betas_train)
+            mode_mean_train = np.mean(modes_train, axis=0)
+            mode_percentile_train = np.percentile(modes_train, q=[2.5, 97.5], axis=0)
+
+            plt.plot(time_train, mode_mean_train, color='g', label='Mode')
+            plt.fill_between(time_train, mode_percentile_train[0], mode_percentile_train[1], color='g', alpha=0.1, label='95% Confidence Interval (Mode)')
+
+            model.predict(x_test, device=torch.device('cpu'))
+            alphas_test = model.likelihood.alpha
+            betas_test = model.likelihood.beta
+
+            modes_test = mode_beta_dist(alphas_test, betas_test)
+            mode_mean_test = np.mean(modes_test, axis=0)
+            mode_percentile_test = np.percentile(modes_test, q=[2.5, 97.5], axis=0)
+
+            plt.plot(time_test, mode_mean_test, color='g')
+            plt.fill_between(time_test, mode_percentile_test[0], mode_percentile_test[1], color='g', alpha=0.1)
+        
         if pred_type == 'mean':
             plot_mean()
         elif pred_type == 'median':
             plot_median()
         
-        elif pred_type == 'both':
+        elif pred_type == 'mode':
+            plot_mode()
+        elif pred_type == 'all':
             plot_mean()
             plot_median()
-        elif pred_type == 'none':
+            plot_mode()
+        else:
             pass
     
     # scatter observed data
     plot_observed_data()
 
     if isinstance(model.likelihood, gpytorch.likelihoods.BetaLikelihood):
-        plot_beta_mode_predictions()
         plot_multivariate_predictions()
     
     elif isinstance(model.likelihood, gpytorch.likelihoods.GaussianLikelihood):
