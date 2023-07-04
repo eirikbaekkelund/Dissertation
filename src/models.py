@@ -285,14 +285,5 @@ class ApproximateGPBaseModel(ApproximateGP):
 
 # TODO implement Latent Force Model
 
-class VariationalLatentForceModel(ABC):
-    """ 
-    Latent Force Model (LFM) for modelling dynamics of a system using a GP.
-    """
-    def __init__(self,
-                 model: gpytorch.models.ApproximateGP
-    ):
-        self.model = model
-        pass 
 
 
