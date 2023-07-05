@@ -120,7 +120,7 @@ def plot_gp(model, x_train, x_test, y_train, y_test, y_inducing=None, pred_type=
         y_inducing (torch.Tensor): inducing points
         pred_type (str): type of prediction to plot
     """
-    assert pred_type in ['mean', 'median', 'all', 'none'], 'pred_type must be one of [mean, median, all, none]'
+    assert pred_type in ['mean', 'median', 'mode', 'all'], 'pred_type must be one of [mean, median, all, none]'
     assert isinstance(model.likelihood, gpytorch.likelihoods.BetaLikelihood) or isinstance(model.likelihood, gpytorch.likelihoods.GaussianLikelihood), 'Unknown likelihood'
     
     # time points for the training and test data
