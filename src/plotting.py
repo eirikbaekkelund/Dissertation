@@ -159,7 +159,7 @@ def plot_gp(model, x_train, x_test, y_train, y_test, y_inducing=None, pred_type=
             lower, upper = preds_test.confidence_region()
             plt.fill_between(time_test, lower, upper, color='r', alpha=0.1)
     
-    def plot_multivariate_predictions():
+    def plot_approximate_predictions():
         """ 
         Plots the mean and confidence intervals of the mean and
         median of the posterior distribution when using non-Gaussian likelihoods
@@ -248,7 +248,7 @@ def plot_gp(model, x_train, x_test, y_train, y_test, y_inducing=None, pred_type=
     plot_observed_data()
 
     if isinstance(model.likelihood, gpytorch.likelihoods.BetaLikelihood):
-        plot_multivariate_predictions()
+        plot_approximate_predictions()
     
     elif isinstance(model.likelihood, gpytorch.likelihoods.GaussianLikelihood):
         plot_gaussian_predictions()

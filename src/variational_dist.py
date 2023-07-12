@@ -1,5 +1,9 @@
-from gpytorch.variational import CholeskyVariationalDistribution, MeanFieldVariationalDistribution, UnwhitenedVariationalStrategy
-from gpytorch.variational import NaturalVariationalDistribution, TrilNaturalVariationalDistribution
+from gpytorch.variational import (CholeskyVariationalDistribution, 
+                                  MeanFieldVariationalDistribution, 
+                                  LMCVariationalStrategy, 
+                                  IndependentMultitaskVariationalStrategy,
+                                  NaturalVariationalDistribution, 
+                                  TrilNaturalVariationalDistribution )
 
 #############################################
 ######## Variational Distribution ###########
@@ -23,7 +27,7 @@ class VariationalBase:
     
     def delete_non_config(self, config):
         """ 
-        Delete non-configuration parameters
+        Remove non-configuration parameters
 
         Args:
             config (dict): configuration of the GP model
@@ -49,6 +53,7 @@ class VariationalBase:
             return CholeskyVariationalDistribution(**config)
         elif name == 'mean_field':
             return MeanFieldVariationalDistribution(**config)
+
     
     def get_natural(self, config):
         """ 

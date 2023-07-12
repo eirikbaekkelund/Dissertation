@@ -232,7 +232,7 @@ class HyperParameterOptimization:
         # likelihood is close to 0 or 1 where we have scaled the beta mean - this should be met with a warning
         
         if torch.isinf(nlpd).any():
-            print('WARNING: negative log predictive density is -infinity, highly peaked likelihood')
+            print('WARNING: negative log predictive density is -infinity, highly peaked likelihood. Scale param is too high.')
 
         nlpd = torch.where(torch.isinf(nlpd), torch.zeros_like(nlpd), nlpd)
         # msll = gpytorch.metrics.mean_standardized_log_loss(self.y_test, trained_pred_dist.mean)
