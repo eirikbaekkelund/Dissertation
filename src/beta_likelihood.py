@@ -5,7 +5,7 @@ from gpytorch.distributions import base_distributions
 
 class BetaLikelihood_MeanParametrization(gpytorch.likelihoods.BetaLikelihood):
     
-    def __init__(self, scale, correcting_scale, lower_bound, upper_bound, *args, **kwargs):
+    def __init__(self, scale, correcting_scale=1, lower_bound=0, upper_bound=1, *args, **kwargs):
         
         super().__init__(*args, **kwargs)
         
