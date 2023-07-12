@@ -184,5 +184,5 @@ class SIMKernel(gpytorch.kernels.Kernel):
         if K.shape[0] == K.shape[1]:
             jitter = 1e-3 * torch.eye(x1.shape[0])
             K += jitter
-      
+        
         return K
