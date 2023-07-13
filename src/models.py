@@ -177,6 +177,7 @@ class ApproximateGPBaseModel(ApproximateGP):
                                                    variational_distribution=variational_distribution,
                                                    learn_inducing_locations=learn_inducing_locations,
                                                    jitter_val=jitter) 
+        variational_strategy.num_tasks = y.size(1) if len(y.size()) > 1 else 1
         
         super(ApproximateGPBaseModel, self).__init__(variational_strategy)
         
@@ -337,7 +338,7 @@ class MultiTaskBetaGP(ApproximateGP):
         elif variational_strategy == 'mt_indep':
             variational_strategy = IndependentMultitaskVariationalStrategy(base_variational_strategy=base_variational,
                                                                            num_tasks=y.size(1),
-                                                                           jitter_val=jitter)
+                                                                         )
 
         super().__init__(variational_strategy)
 

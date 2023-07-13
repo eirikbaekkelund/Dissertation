@@ -11,7 +11,6 @@ from gpytorch.variational import (
     TrilNaturalVariationalDistribution
 )
 
-
 class MultiOutputGP(ApproximateGP):
     def __init__(self,
                  mean_module,
