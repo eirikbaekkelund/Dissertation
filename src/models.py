@@ -232,9 +232,7 @@ class ApproximateGPBaseModel(ApproximateGP):
         self.train()
         self.likelihood.train()
 
-        optimizer = optim([{'params': self.parameters()},
-                           {'params': self.likelihood.parameters()}
-                           ], lr=lr)
+        optimizer = optim(self.parameters(), lr=lr)
         elbo = gpytorch.mlls.VariationalELBO(likelihood=self.likelihood, 
                                             model=self, 
                                             num_data=self.y.size(0))

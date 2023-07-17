@@ -81,4 +81,3 @@ class PV_LFM_Dataset(TranscriptomicTimeSeries):
 
         self.data = [(train_t, m_observed[:, i]) for i in range(num_outputs)]
 
-

@@ -63,13 +63,11 @@ class OrdinaryLFM(VariationalLFM):
             t_f = torch.arange(t.min(), t.max()+step_size/3, step_size/3)
             t_output = t
             h0 = self.initial_state
-            print(h0)
-            print(h0.shape)
+          
             h0 = h0.unsqueeze(0).repeat(self.config.num_samples, 1, 1)
 
         q_f = self.gp_model(t_f)
         sample = q_f.rsample(torch.Size([self.config.num_samples]))
-        print(sample.shape)
 
         self.latent_gp = q_f.rsample(torch.Size([self.config.num_samples])).permute(0, 2, 1)  # (S, I, T)
         self.latent_gp = self.nonlinearity(self.latent_gp)
@@ -113,6 +111,7 @@ class OrdinaryLFM(VariationalLFM):
 
         h_covar = DiagLazyTensor(h_var)  # (num_tasks, t, t)
         batch_mvn = gpytorch.distributions.MultivariateNormal(h_mean, h_covar)
+        
         return gpytorch.distributions.MultitaskMultivariateNormal.from_batch_mvn(batch_mvn, task_dim=0)
 
     @abstractmethod
