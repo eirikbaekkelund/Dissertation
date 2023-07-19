@@ -67,7 +67,6 @@ class PV_LFM_Dataset(TranscriptomicTimeSeries):
         variance (torch.Tensor): variance of the data
     """
     def __init__(self, num_outputs, m_observed, f_observed, train_t, variance, **kwargs):
-        
         assert m_observed.shape[1] == num_outputs
         assert len(train_t) == m_observed.shape[0] == f_observed.shape[0]
        
@@ -76,6 +75,7 @@ class PV_LFM_Dataset(TranscriptomicTimeSeries):
         self.num_outputs = m_observed.shape[1] if len(m_observed.shape) > 1 else 1
         self.f_observed = f_observed.view(1, 1, len(train_t))
         self.t_observed = train_t
+        self.times = train_t
         self.variance = variance
         self.names = np.array(['PV System ' + str(i) for i in range(num_outputs)])
 

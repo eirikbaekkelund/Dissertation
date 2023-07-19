@@ -419,8 +419,3 @@ class MultiTaskBetaGP(ApproximateGP):
 ########################################
 ##########  Latent Force Model  ########
 ########################################
-
-# TODO implement Latent Force Model
-
-
-

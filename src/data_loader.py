@@ -236,7 +236,10 @@ def save_csv(df, folder_name, file_name):
         file_name (str): file name
     """
     
-    remote_path = os.path.join(os.path.dirname(os.getcwd()), folder_name)    
+    remote_path = os.path.join(os.path.dirname(os.getcwd()), folder_name)
+    # make sure path contains 'Code/' and drop everything after 'Code/'
+    remote_path = remote_path.split('Code/')[0] + f'Code/{folder_name}'
+    
     df.to_csv(os.path.join(remote_path, file_name))
 
 def find_nearby_systems(df_location, lat, lon, radius):
@@ -499,7 +502,8 @@ class PVDataLoader:
         r_grid, y = remove_nan_systems(r_grid=r_grid, y=y)
 
         self.time_tensor, self.r_grid_tensor, self.y_tensor = convert_grid_to_tensor(time=time, r_grid=r_grid, y=y)
-
+        self.time_tensor = torch.arange(0, len(self.time_tensor)).float()
+        
     def __len__(self):
         return len(self.time_tensor)
     
@@ -510,6 +514,8 @@ class PVDataLoader:
 
         if torch.cuda.is_available():
             return self.time_tensor.cuda(), self.y_tensor.cuda()
+        
+
         
         return self.time_tensor, self.y_tensor
     
