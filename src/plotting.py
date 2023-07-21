@@ -6,15 +6,22 @@ import gpytorch
 from scipy.stats import beta
 from mpl_toolkits.basemap import Basemap
 
-def plot_grid(df, COORDS, RADIUS):
+def plot_grid(df, coords, radius=1, distance_method='circle'):
     """
     Plot the grid of the UK with the PV systems
 
     Args:
-        df (pd.DataFrame): dataframe containing the PV systems
-        COORDS (tuple): coordinates of the center of the circle
+        df (pd.DataFrame): dataframe containing the PV systems locations
+        COORDS (tuple): coordinates of the center of the circle / corners of the polygon
         RADIUS (float): radius of the circle
     """
+    assert distance_method in ['circle', 'poly'], 'distance_method must be either "circle" or "poly"'
+    if distance_method == 'circle':
+        assert len(coords) == 2, 'coords must be a tuple of length 2'
+    
+    elif distance_method == 'poly':
+        assert len(coords) == 4, 'coords must be a tuple of length 4'
+    
     _, ax = plt.subplots(figsize=(8, 8))
 
     # create Basemap instance
@@ -31,10 +38,21 @@ def plot_grid(df, COORDS, RADIUS):
     x, y = map_uk(df['longitude_noisy'].values, df['latitude_noisy'].values)
     map_uk.scatter(x, y, alpha=0.4, color='b', label='PV systems')
 
-    # a circle representing the desired area
-    lon, lat = map_uk(COORDS[1], COORDS[0])
-    circle = plt.Circle((lon, lat), RADIUS, color='r', fill=True, alpha=0.3, label='Selected Area')
-    ax.add_patch(circle)
+    if distance_method == 'circle':
+        # a circle representing the desired area
+        lon, lat = map_uk(coords[1], coords[0])
+        circle = plt.Circle((lon, lat), radius, color='r', fill=True, alpha=0.3, label='Selected Area')
+        ax.add_patch(circle)
+    
+    elif distance_method == 'poly':
+        c1, c2, c3, c4 = coords
+        lon1, lat1 = map_uk(c1[1], c1[0])
+        lon2, lat2 = map_uk(c2[1], c2[0])
+        lon3, lat3 = map_uk(c3[1], c3[0])
+        lon4, lat4 = map_uk(c4[1], c4[0])
+        poly = plt.Polygon([(lon1, lat1), (lon2, lat2), (lon4, lat4), (lon3, lat3)], color='r', fill=True, alpha=0.3, label='Selected Area')
+        ax.add_patch(poly)
+
 
 
     ax.set_xticks(np.arange(-7, 3,))

@@ -24,6 +24,8 @@ class BetaLikelihood_MeanParametrization(gpytorch.likelihoods.BetaLikelihood):
         
         mixture = torch.distributions.Normal(0, 1).cdf(function_samples)
         eps = 1e-9
+        
+        # TODO possibly adjust scale for multitask Beta likelihood
         alpha = mixture * self.scale + eps
         beta = self.scale - alpha + eps
 
@@ -62,4 +64,8 @@ class BetaLikelihood_MeanParametrization(gpytorch.likelihoods.BetaLikelihood):
         result[mask_alpha_gt_1 & mask_beta_le_1] = 1
 
         return result
-    
+
+class MultitaskBetaLikelihood(BetaLikelihoodMeanParameterization):
+    """ 
+    A multitask BetaLikelihood that supports
+    """

@@ -5,6 +5,8 @@ import os
 import xarray as xr
 import datetime
 import time
+from shapely.geometry import Polygon, Point
+
 
 #########################################################
 ###############       PREPROCESSING       ###############
@@ -114,7 +116,8 @@ def scale_by_capacity(df_pv, df_location):
     """
     capacities = df_location[df_location.index.isin(df_pv.columns)]['kwp'] * 1000
     df_pv = df_pv / capacities
-
+    df_pv = df_pv / df_pv.max()
+    
     return df_pv
 
 def drop_night_production(df_pv, threshold=0.4):
@@ -242,11 +245,10 @@ def save_csv(df, folder_name, file_name):
     
     df.to_csv(os.path.join(remote_path, file_name))
 
-def find_nearby_systems(df_location, lat, lon, radius):
+def find_nearby_systems_circle(df_location, lat, lon, radius):
     """
-    Find nearby systems by latitude and longitude
-    in a circular area centered at (lat, lon) with radius
-    as specified
+    Find nearby systems by latitude and longitude in a circular area 
+    centered at (lat, lon) with radius as specified.
 
     Args:
         df_location (pd.DataFrame): location data
@@ -259,6 +261,43 @@ def find_nearby_systems(df_location, lat, lon, radius):
     """
     # get latitude and longitude of nearby systems
     nearby_systems = df_location[(df_location['latitude_noisy'] - lat)**2 + (df_location['longitude_noisy'] - lon)**2 < radius**2]
+    return nearby_systems
+
+def find_nearby_systems_poly(df_location, c1, c2, c3, c4):
+    """ 
+    Find systems inside a polygonal area specified by the coordinates of 4 corners.
+    The input it should have the form
+    c1 = (x1, y1) is the bottom left corner 
+    c2 = (x2, y2) is the bottom right corner
+    c3 = (x3, y3) is the top left corner
+    c4 = (x4, y4) is the top right corner
+
+    Args:
+        df_location (pd.DataFrame): location data
+        c1 (tuple): coordinate of corner 1 (bottom left)
+        c2 (tuple): coordinate of corner 2 (bottom right)
+        c3 (tuple): coordinate of corner 3 (top left)
+        c4 (tuple): coordinate of corner 4 (top right)
+    
+    Returns:
+        nearby_systems (pd.DataFrame): nearby systems
+    """
+    assert len(c1) == len(c2) == len(c3) == len(c4) == 2, 'Coordinates must be tuples of length 2'
+    assert c1[0] < c3[0] and c2[0] < c4[0], 'Coordinates must be in the order: c1, c2, c3, c4'
+    assert c1[1] < c2[1] and c3[1] < c4[1], 'Coordinates must be in the order: c1, c2, c3, c4'
+    # Create a polygon from the four corner coordinates
+    polygon = Polygon([c1, c2, c4, c3])
+
+    # Create a list to store the points (latitude, longitude)
+    points = []
+    for _, row in df_location.iterrows():
+        latitude = row['latitude_noisy']
+        longitude = row['longitude_noisy']
+        points.append(Point(latitude, longitude))
+
+    # Filter systems that are inside the polygon
+    nearby_systems = df_location[[polygon.contains(point) for point in points]]
+
     return nearby_systems
 
 def stack_dataframe(df_pv, lats_map, longs_map):
@@ -428,6 +467,78 @@ def train_test_split(X, y, minute_interval=5, n_hours=8):
 
     return X_train, y_train, X_test, y_test
 
+def cross_val_folds(y, periodic_time, n_days, daily_points):
+    """
+    Splits the data into n_days folds
+
+    Args:
+        y (torch.tensor): target data
+        periodic_time (torch.tensor): periodic time data
+        n_days (int): number of days to use
+        daily_points (int): number of points per day
+    
+    Returns:
+        y_list (list): list of target data
+        periodic_time_list (list): list of periodic time data
+        time (torch.tensor): time data
+    """
+    interval = int(n_days * daily_points)
+    y_list = [y[i:i+interval] for i in range(0, len(y), interval)]
+    periodic_time_list = [periodic_time[i:i+interval] for i in range(0, len(periodic_time), interval)]
+    time = torch.arange(0, len(y_list[0]))
+
+    return y_list, periodic_time_list, time
+
+def train_test_split_fold(y_list, periodic_time_list, n_hours_pred, daily_points, day_min, day_max):
+    """ 
+    Split the data into train and test sets
+    The test set is a random hour between 8 and 16 - N for all folds 
+    (where N is the number of hours to predict). That will avoid 
+    discontinuity and facilitates predictions at different times of 
+    the day.
+
+    Args: 
+        y (list): the list of y values
+        periodic_time (list): list of periodic times
+        n_hours_pred (int): the number of hours to predict
+        daily_points (int): the number of data points per day
+    """ 
+    assert daily_points % (day_max - day_min) == 0, "daily_points must be divisible by day_max - day_min"
+    assert len(y_list) == len(periodic_time_list), "y_list and periodic_time_list must have the same length"
+    
+    y_train = []
+    y_test = []
+    
+    time_train = []
+    time_test = []
+
+    periodic_train = []
+    periodic_test = []
+    
+    hourly_data_points = daily_points // (day_max - day_min) 
+    
+    # indexes going backwards from the end of the array
+    min_start_idx = int(n_hours_pred * hourly_data_points)
+    max_start_idx = int(daily_points)
+    
+    for i in range(len(y_list)):
+
+        last_hr_idx = np.random.randint(min_start_idx, max_start_idx)
+        start_idx = last_hr_idx + int((n_hours_pred * hourly_data_points))
+
+        y_train.append(y_list[i][:-start_idx])
+        y_test.append(y_list[i][-start_idx:-last_hr_idx])
+
+        periodic_train.append(periodic_time_list[i][:-start_idx])
+        periodic_test.append(periodic_time_list[i][-start_idx:-last_hr_idx])
+
+        _time = torch.arange(0, len(y_train[-1]) + len(y_test[-1]))
+
+        time_train.append(_time[:-len(y_test[-1])])
+        time_test.append(_time[-len(y_test[-1]):])
+
+    return y_train, y_test, periodic_train, periodic_test, time_train, time_test
+
 #########################################################
 ################       DATA LOADER       ################
 #########################################################
@@ -443,18 +554,32 @@ class PVDataLoader:
         radius (float): radius in km
         coords (tuple): coordinates of the center of the area
     """
-    def __init__(self,
-                 n_days : int,
-                 day_init : int, 
-                 minute_interval : int, 
-                 n_systems : int, 
-                 radius : float, 
+    def __init__(self,                 
                  coords : tuple, 
-                 day_min : int, 
-                 day_max : int,
-                 folder_name : str,
-                 file_name_pv : str,
-                 file_name_location : str):
+                 radius : float = 1,
+                 day_init : int = 0,
+                 n_systems : int = 15, 
+                 n_days : int = 5,
+                 minute_interval : int = 5,
+                 day_min : int = 8, 
+                 day_max : int = 16,
+                 folder_name : str = 'pv_data',
+                 file_name_pv : str = 'pv_data_clean.csv',
+                 file_name_location : str = 'pv_data_location.csv',
+                 distance_method : str = 'circle'):
+        
+        assert distance_method in ['circle', 'poly'], 'distance_method must be either circle or poly'
+        assert day_min < day_max, 'day_min must be smaller than day_max'
+        assert day_min >= 0 and day_max <= 24, 'day_min and day_max must be between 0 and 24'
+        assert n_systems > 0, 'n_systems must be greater than 0'
+        assert n_days > 0, 'n_days must be greater than 0'
+        assert minute_interval > 0, 'minute_interval must be greater than 0'
+        
+        if distance_method == 'circle':
+            assert radius > 0, 'radius must be greater than 0'
+            assert len(coords) == 2, 'coords must be a tuple of length 2 when using circle method'
+        else:
+            assert len(coords) == 4, 'coords must be a tuple of length 4 when using poly method'
        
         # load data for pv and location
         df_pv = load_data(folder_name=folder_name, file_name=file_name_pv)
@@ -465,17 +590,18 @@ class PVDataLoader:
         date_time = df_pv['datetime']
         
         # get systems in the area 
-        systems = find_nearby_systems(df_location=df_location, 
-                                           lat=coords[0], 
-                                           lon=coords[1], 
-                                           radius=radius)
+        if distance_method == 'circle':
+            systems = find_nearby_systems_circle(df_location=df_location, 
+                                            lat=coords[0], 
+                                            lon=coords[1], 
+                                            radius=radius)
+        else:
+            systems = find_nearby_systems_poly(df_location, *coords)
         
         # update number of systems to use by the number of systems in the area
         systems, pv_series = align_pv_systems(df_location=systems, df_pv=df_pv)
         lats, longs = get_location_maps(df_location=systems, n_systems=n_systems)
 
-      
-        
         n_daily_points = (day_max - day_min) * 60 // minute_interval
         n_samples = int(n_daily_points * n_days)
         
@@ -499,6 +625,9 @@ class PVDataLoader:
         y = y.squeeze()
         time = time.squeeze()
 
+        # TODO add functionality to interval all data by n_days
+        # TODO create a cross_val_fold method
+
         r_grid, y = remove_nan_systems(r_grid=r_grid, y=y)
 
         self.time_tensor, self.r_grid_tensor, self.y_tensor = convert_grid_to_tensor(time=time, r_grid=r_grid, y=y)
@@ -514,9 +643,7 @@ class PVDataLoader:
 
         if torch.cuda.is_available():
             return self.time_tensor.cuda(), self.y_tensor.cuda()
-        
-
-        
+        self.y_tensor = torch.clamp(self.y_tensor, min=0, max=1)
         return self.time_tensor, self.y_tensor
     
 
