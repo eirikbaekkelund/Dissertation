@@ -204,13 +204,7 @@ class HyperParameterOptimization:
         Returns:
             float: negative log likelihood
         """
-        if self.model == 'approximate':
-            model = ApproximateGPBaseModel(**inputs)
-        
-        if self.model == 'exact':
-            model = ExactGPModel(**inputs)
-        
-        
+        model = ApproximateGPBaseModel(**inputs)
         #n_iter = trial.suggest_int('n_iter', 100, 500, step=100)
         lr = trial.suggest_float('lr', 0.1, 0.4, step=0.1)
 
@@ -265,7 +259,6 @@ class HyperParameterOptimization:
                   trial : optuna.trial.Trial,
                   config : dict,
                   jitter : float,
-                  kernel: str
                  ):
         """ 
         Objective function for Optuna.
@@ -276,16 +269,8 @@ class HyperParameterOptimization:
         Returns:
             float: negative log predictive density
         """
-        assert kernel in ['matern', 'periodic', 'quasi_periodic']
-        
-        
-        if kernel == 'matern':
-            kernel = self.sample_params_matern(trial)
-        elif kernel == 'periodic':
-            kernel = self.sample_params_periodic(trial)
-        elif kernel == 'quasi_periodic':
-            kernel = self.sample_params_quasi_periodic(trial)
-
+    
+        kernel = self.sample_params_quasi_periodic(trial)
         likelihood = self.sample_params_likelihood(trial)
         
         if len(self.y_train.shape) > 1: 

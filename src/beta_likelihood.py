@@ -65,7 +65,8 @@ class BetaLikelihood_MeanParametrization(gpytorch.likelihoods.BetaLikelihood):
 
         return result
 
-class MultitaskBetaLikelihood(BetaLikelihoodMeanParameterization):
+class MultitaskBetaLikelihood(BetaLikelihood_MeanParametrization):
     """ 
     A multitask BetaLikelihood that supports
     """
+    pass # TODO implement multitask Beta likelihood
