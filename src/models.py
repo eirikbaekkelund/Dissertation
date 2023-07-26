@@ -1,15 +1,20 @@
 from abc import ABC
 import torch
 import gpytorch
-
+import numpy as np
 from gpytorch.models import ExactGP, ApproximateGP
 from gpytorch.variational import (VariationalStrategy, 
                                   LMCVariationalStrategy, 
-                                  IndependentMultitaskVariationalStrategy,
                                   MeanFieldVariationalDistribution)
 from gpytorch.likelihoods import GaussianLikelihood
 from gpytorch.distributions import MultivariateNormal
 from src.variational_dist import VariationalBase
+from torch.distributions import MultivariateNormal
+from alfi.models.lfm import LFM
+from alfi.means import SIMMean
+from alfi.utilities.data import flatten_dataset
+from alfi.datasets import LFMDataset
+from src.kernel import SIMKernel
 
 
 ########################################
@@ -61,8 +66,7 @@ class ExactGPModel(ExactGP):
     def fit(self, 
             n_iter : int,
             lr : float,
-            optim : torch.optim.Optimizer,
-            device : torch.device):
+            optim : torch.optim.Optimizer):
         """
         Train the GP model
 
@@ -72,7 +76,6 @@ class ExactGPModel(ExactGP):
             optim (str): optimizer
             device (torch.device): device to train on
         """
-        self.to(device)
         
         self.train()
         self.likelihood.train()
@@ -98,7 +101,7 @@ class ExactGPModel(ExactGP):
             if (i + 1) % print_freq == 0:
                 print('Iter %d/%d - Loss: %.3f' % (i + 1, n_iter, loss.item()))
 
-    def predict(self, X : torch.Tensor, device : torch.device):
+    def predict(self, X : torch.Tensor):
         """ 
         Make predictions with the GP model
 
@@ -111,10 +114,7 @@ class ExactGPModel(ExactGP):
         """
         self.eval()
         self.likelihood.eval()
-        
-        self.to(device)
-        self.likelihood.to(device)
-
+    
         with torch.no_grad():
             preds = self.likelihood(self(X)) 
             
@@ -127,9 +127,6 @@ class ExactGPModel(ExactGP):
 
 # TODO maybe use UnwhitenedVariationalStrategy instead of VariationalStrategy for having exact inducing points
 # TODO possibly add natural gradients
-# TODO config to work for unwhitened, natural, and tril natural
-# TODO create fit function for natural variational distribution
-# TODO add X and y as input params to ApproximateGPBaseModel and remove BetaGP and GaussianGP
 
 class ApproximateGPBaseModel(ApproximateGP):
     """ 
@@ -206,7 +203,6 @@ class ApproximateGPBaseModel(ApproximateGP):
             latent_u (gpytorch.distributions.MultivariateNormal): GP model 
                                                                    f(x), where f ~ GP( m(x), k(x, x))
         """
-        
         mu = self.mean_module(x)
         k = self.covar_module(x)
 
@@ -215,8 +211,6 @@ class ApproximateGPBaseModel(ApproximateGP):
     def fit(self, 
             n_iter : int, 
             lr : float,
-            optim : torch.optim.Optimizer,
-            device : torch.device, 
             verbose : bool = True):
         """
         Train the GP model using SVI
@@ -227,13 +221,11 @@ class ApproximateGPBaseModel(ApproximateGP):
             optim (str): optimizer
             device (torch.device): device to train on
             verbose (bool): whether to print training progress
-        """
-        self.to(device)
-        
+        """        
         self.train()
         self.likelihood.train()
 
-        optimizer = optim(self.parameters(), lr=lr)
+        optimizer = torch.optim.Adam(self.parameters(), lr=lr)
         elbo = gpytorch.mlls.VariationalELBO(likelihood=self.likelihood, 
                                             model=self, 
                                             num_data=self.y.size(0))
@@ -253,7 +245,7 @@ class ApproximateGPBaseModel(ApproximateGP):
             if verbose and (i+1) % print_freq == 0:
                 print(f'Iter {i+1}/{n_iter} - Loss: {loss.item():.3f}')
     
-    def predict(self, X : torch.Tensor, device : torch.device):
+    def predict(self, X : torch.Tensor):
         """ 
         Make predictions with the GP model
 
@@ -267,9 +259,6 @@ class ApproximateGPBaseModel(ApproximateGP):
         self.eval()
         self.likelihood.eval()
         
-        self.to(device)
-        self.likelihood.to(device)
-
         with torch.no_grad():
            
             if not isinstance(self.likelihood, GaussianLikelihood):
@@ -292,9 +281,9 @@ class MultitaskGPModel(gpytorch.models.ApproximateGP):
     def __init__(self,
                  x_train : torch.Tensor,
                  y_train : torch.Tensor,
-                 likelihood : gpytorch.likelihoods.Likelihood,
-                 mean_module : gpytorch.means.Mean,
-                 covar_module : gpytorch.kernels.Kernel,
+                 likelihood : gpytorch.likelihoods.Likelihood = None,
+                 mean_module : gpytorch.means.Mean = None,
+                 covar_module : gpytorch.kernels.Kernel = None,
                  num_latents : int = 1,
                  jitter : float = 1e-4
                  ):
@@ -311,17 +300,14 @@ class MultitaskGPModel(gpytorch.models.ApproximateGP):
         )
         
         # LMC constructs MultitaskMultivariateNormal from the base var dist
-        variational_strategy = LMCVariationalStrategy(
-                                VariationalStrategy(
-                                                self, 
-                                                x_train, 
-                                                variational_distribution, 
-                                                learn_inducing_locations=False, 
-                                                jitter_val=jitter),
-                            num_tasks=num_tasks,
-                            num_latents=num_latents,
-                            latent_dim=-1
-                        )
+        variational_strategy = gpytorch.variational.LMCVariationalStrategy(
+            gpytorch.variational.VariationalStrategy(
+                self, x_train, variational_distribution, learn_inducing_locations=False, jitter_val=jitter
+            ),
+            num_tasks=num_tasks,
+            num_latents=num_latents,
+            latent_dim=-1
+        )
         
         super().__init__(variational_strategy)
         
@@ -343,7 +329,7 @@ class MultitaskGPModel(gpytorch.models.ApproximateGP):
             self.train()
             self.likelihood.train()
             
-            elbo = gpytorch.mlls.VariationalELBO(self.likelihood, self, num_data=self.y_train.size(0))
+            mll = gpytorch.mlls.VariationalELBO(self.likelihood, self, num_data=self.y_train.size(0))
             optim = torch.optim.Adam(self.parameters(), lr=lr)
             
             print_freq = n_iter // 10
@@ -352,7 +338,7 @@ class MultitaskGPModel(gpytorch.models.ApproximateGP):
                 
                 optim.zero_grad()
                 output = self(self.x_train)
-                loss = -elbo(output, self.y_train)
+                loss = -mll(output, self.y_train)
                 loss.backward()
                 optim.step()
                 
@@ -381,10 +367,109 @@ class MultitaskGPModel(gpytorch.models.ApproximateGP):
         else:
             raise NotImplementedError('Likelihood not implemented')
 
-# TODO implement Latent Force Model
-
 ########################################
 ##########  Latent Force Model  ########
 ########################################
+
+class ExactLFM(LFM, gpytorch.models.ExactGP):
+    """
+    An implementation of the single input motif from Lawrence et al., 2006.
+    """
+    def __init__(self, dataset: LFMDataset, variance):
+        train_t, train_y = flatten_dataset(dataset)
+
+        super().__init__(train_t, train_y, likelihood=gpytorch.likelihoods.GaussianLikelihood())
+
+        self.num_outputs = dataset.num_outputs
+     
+        self.train_t = train_t
+        self.train_y = train_y
+       
+        self.covar_module = SIMKernel(self.num_outputs, torch.tensor(variance, requires_grad=False))
+        initial_basal = torch.mean(train_y.view(self.num_outputs, -1), dim=1) * self.covar_module.decay
+        self.mean_module = SIMMean(self.covar_module, self.num_outputs, initial_basal)
+
+    @property
+    def decay_rate(self):
+        return self.covar_module.decay
+
+    @decay_rate.setter
+    def decay_rate(self, val):
+        self.covar_module.decay = val
+
+    def forward(self, x):
+
+        x.flatten()
+        
+        mean_x = self.mean_module(x)
+        covar_x = self.covar_module(x) 
+
+        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+
+    def predict_m(self, pred_t, jitter=1e-3) -> torch.distributions.MultivariateNormal:
+        """
+        Predict outputs of the LFM
+        :param pred_t: prediction times
+        :param jitter:
+        :return:
+        """
+        Kxx = self.covar_module(self.train_t, self.train_t)
+        K_inv = torch.inverse(Kxx.evaluate())
+        pred_t_blocked = pred_t.repeat(self.num_outputs)
+        K_xxstar = self.covar_module(self.train_t, pred_t_blocked).evaluate()
+        K_xstarx = torch.transpose(K_xxstar, 0, 1).type(torch.float64)
+        K_xstarxK_inv = torch.matmul(K_xstarx, K_inv)
+        KxstarxKinvY = torch.matmul(K_xstarxK_inv.double(), self.train_y.double())
+        mean = KxstarxKinvY.view(self.num_outputs, pred_t.shape[0])
+
+        K_xstarxstar = self.covar_module(pred_t_blocked, pred_t_blocked).evaluate()
+        var = K_xstarxstar - torch.matmul(K_xstarxK_inv, torch.transpose(K_xstarx, 0, 1))
+        var = torch.diagonal(var, dim1=0, dim2=1).view(self.num_outputs, pred_t.shape[0])
+        mean = mean.transpose(0, 1)
+        var = var.transpose(0, 1)
+        var = torch.diag_embed(var)
+        var += jitter * torch.eye(var.shape[-1])
+ 
+        return MultivariateNormal(mean, var)
+
+    def predict_f(self, pred_t, jitter=1e-5) -> MultivariateNormal:
+        """
+        Predict the latent function.
+
+        :param pred_t: Prediction times
+        :param jitter:
+        :return:
+        """
+        Kxx = self.covar_module(self.train_t, self.train_t)
+        K_inv = torch.inverse(Kxx.evaluate())
+
+        Kxf = self.covar_module.K_xf(self.train_t, pred_t).type(torch.float64)
+        KfxKxx = torch.matmul(torch.transpose(Kxf, 0, 1), K_inv)
+        mean = torch.matmul(KfxKxx.double(), self.train_y.double()).view(-1).unsqueeze(0)
+
+        #Kff-KfxKxxKxf
+        Kff = self.covar_module.K_ff(pred_t, pred_t)  # (100, 500)
+        var = Kff - torch.matmul(KfxKxx, Kxf)
+        # var = torch.diagonal(var, dim1=0, dim2=1).view(-1)
+        var = var.unsqueeze(0)
+        # For some reason a full covariance is not PSD, for now just take the variance: (TODO)
+        var = torch.diagonal(var, dim1=1, dim2=2)
+        var = torch.diag_embed(var)
+        var += jitter * torch.eye(var.shape[-1])
+
+        batch_mvn = gpytorch.distributions.MultivariateNormal(mean, var)
+        return gpytorch.distributions.MultitaskMultivariateNormal.from_batch_mvn(batch_mvn, task_dim=0)
+
+    def save(self, filepath):
+        torch.save(self.state_dict(), filepath+'lfm.pt')
+
+    @classmethod
+    def load(cls,
+             filepath,
+             lfm_args=[], lfm_kwargs={}):
+        lfm_state_dict = torch.load(filepath+'lfm.pt')
+        lfm = cls(*lfm_args, **lfm_kwargs)
+        lfm.load_state_dict(lfm_state_dict)
+        return lfm
 
 # TODO implement GPAR (Gaussian Process Autoregressive Regression)

@@ -3,7 +3,6 @@ from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 import numpy as np
 import torch
 import gpytorch
-from scipy.stats import beta
 from mpl_toolkits.basemap import Basemap
 
 def plot_grid(df, coords, radius=1, distance_method='circle'):
@@ -162,8 +161,8 @@ def plot_gp(model, x_train, x_test, y_train, y_test, y_inducing=None, pred_type=
         """ 
         Plots the mean and confidence intervals of the gaussian distribution
         """
-        preds_train = model.predict(x_train, device=torch.device('cpu'))
-        preds_test = model.predict(x_test, device=torch.device('cpu'))
+        preds_train = model.predict(x_train)
+        preds_test = model.predict(x_test)
 
         with torch.no_grad():
             # plot the means
@@ -182,8 +181,8 @@ def plot_gp(model, x_train, x_test, y_train, y_test, y_inducing=None, pred_type=
         Plots the mean and confidence intervals of the mean and
         median of the posterior distribution when using non-Gaussian likelihoods
         """
-        dist_train = model.predict(x_train, device=torch.device('cpu'))
-        dist_test = model.predict(x_test, device=torch.device('cpu'))
+        dist_train = model.predict(x_train)
+        dist_test = model.predict(x_test)
         preds_train = dist_train.sample((50,))
         preds_test = dist_test.sample((50,))
 
@@ -226,7 +225,7 @@ def plot_gp(model, x_train, x_test, y_train, y_test, y_inducing=None, pred_type=
             Plots the mean and confidence intervals of the beta distribution
             from MC samples using the mode of the distribution
             """
-            model.predict(x_train, device=torch.device('cpu'))
+            model.predict(x_train)
             alphas_train = model.likelihood.alpha
             betas_train = model.likelihood.beta
             
@@ -237,7 +236,7 @@ def plot_gp(model, x_train, x_test, y_train, y_test, y_inducing=None, pred_type=
             plt.plot(time_train, mode_mean_train, color='g', label='Mode')
             plt.fill_between(time_train, mode_percentile_train[0], mode_percentile_train[1], color='g', alpha=0.1, label='95% Confidence Interval (Mode)')
 
-            model.predict(x_test, device=torch.device('cpu'))
+            model.predict(x_test)
             alphas_test = model.likelihood.alpha
             betas_test = model.likelihood.beta
 

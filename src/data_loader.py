@@ -6,6 +6,7 @@ import xarray as xr
 import datetime
 import time
 from shapely.geometry import Polygon, Point
+from torch.utils.data import Dataset
 
 
 #########################################################
@@ -467,7 +468,7 @@ def train_test_split(X, y, minute_interval=5, n_hours=8):
 
     return X_train, y_train, X_test, y_test
 
-def cross_val_folds(y, periodic_time, n_days, daily_points):
+def cross_val_fold(X, y, n_days, daily_points):
     """
     Splits the data into n_days folds
 
@@ -483,13 +484,13 @@ def cross_val_folds(y, periodic_time, n_days, daily_points):
         time (torch.tensor): time data
     """
     interval = int(n_days * daily_points)
+    x_list = [X[i:i+interval, :] for i in range(0, len(X), interval)]
     y_list = [y[i:i+interval] for i in range(0, len(y), interval)]
-    periodic_time_list = [periodic_time[i:i+interval] for i in range(0, len(periodic_time), interval)]
-    time = torch.arange(0, len(y_list[0]))
 
-    return y_list, periodic_time_list, time
+    return x_list, y_list
 
-def train_test_split_fold(y_list, periodic_time_list, n_hours_pred, daily_points, day_min, day_max):
+
+def train_test_split_fold(x_list, y_list, n_hours_pred, daily_points, day_min, day_max):
     """ 
     Split the data into train and test sets
     The test set is a random hour between 8 and 16 - N for all folds 
@@ -504,16 +505,13 @@ def train_test_split_fold(y_list, periodic_time_list, n_hours_pred, daily_points
         daily_points (int): the number of data points per day
     """ 
     assert daily_points % (day_max - day_min) == 0, "daily_points must be divisible by day_max - day_min"
-    assert len(y_list) == len(periodic_time_list), "y_list and periodic_time_list must have the same length"
+    assert len(x_list) == len(y_list), "y_list and periodic_time_list must have the same length"
     
     y_train = []
     y_test = []
     
-    time_train = []
-    time_test = []
-
-    periodic_train = []
-    periodic_test = []
+    x_train = []
+    x_test = []
     
     hourly_data_points = daily_points // (day_max - day_min) 
     
@@ -525,25 +523,27 @@ def train_test_split_fold(y_list, periodic_time_list, n_hours_pred, daily_points
 
         last_hr_idx = np.random.randint(min_start_idx, max_start_idx)
         start_idx = last_hr_idx + int((n_hours_pred * hourly_data_points))
+        
+        x_tr = x_list[i][:-start_idx]
+        x_te = x_list[i][-start_idx:-last_hr_idx]
 
+        time = torch.arange(0, len(x_tr) + len(x_te)).float()
+        x_tr[:,0] = time[:len(x_tr)]
+        x_te[:,0] = time[len(x_tr):]
+
+        x_train.append(x_tr)
+        x_test.append(x_te)
+        
         y_train.append(y_list[i][:-start_idx])
         y_test.append(y_list[i][-start_idx:-last_hr_idx])
 
-        periodic_train.append(periodic_time_list[i][:-start_idx])
-        periodic_test.append(periodic_time_list[i][-start_idx:-last_hr_idx])
-
-        _time = torch.arange(0, len(y_train[-1]) + len(y_test[-1]))
-
-        time_train.append(_time[:-len(y_test[-1])])
-        time_test.append(_time[-len(y_test[-1]):])
-
-    return y_train, y_test, periodic_train, periodic_test, time_train, time_test
+    return x_train, y_train, x_test, y_test
 
 #########################################################
 ################       DATA LOADER       ################
 #########################################################
 
-class PVDataLoader:
+class PVDataGenerator:
     """
     Data loader for the Temporal GP model
 
@@ -566,7 +566,8 @@ class PVDataLoader:
                  folder_name : str = 'pv_data',
                  file_name_pv : str = 'pv_data_clean.csv',
                  file_name_location : str = 'pv_data_location.csv',
-                 distance_method : str = 'circle'):
+                 distance_method : str = 'circle',
+                 drop_nan : bool = True):
         
         assert distance_method in ['circle', 'poly'], 'distance_method must be either circle or poly'
         assert day_min < day_max, 'day_min must be smaller than day_max'
@@ -602,6 +603,10 @@ class PVDataLoader:
         systems, pv_series = align_pv_systems(df_location=systems, df_pv=df_pv)
         lats, longs = get_location_maps(df_location=systems, n_systems=n_systems)
 
+        # scale pv data by making it 0-1 by dividing by max value in each column
+        pv_series = pv_series / pv_series.max()
+        pv_series = pv_series[::minute_interval//5] # time interval is 5 minutes in the data
+
         n_daily_points = (day_max - day_min) * 60 // minute_interval
         n_samples = int(n_daily_points * n_days)
         
@@ -628,24 +633,44 @@ class PVDataLoader:
         # TODO add functionality to interval all data by n_days
         # TODO create a cross_val_fold method
 
-        r_grid, y = remove_nan_systems(r_grid=r_grid, y=y)
+        if drop_nan:
+            r_grid, y = remove_nan_systems(r_grid=r_grid, y=y)
 
         self.time_tensor, self.r_grid_tensor, self.y_tensor = convert_grid_to_tensor(time=time, r_grid=r_grid, y=y)
         self.time_tensor = torch.arange(0, len(self.time_tensor)).float()
-        
-    def __len__(self):
-        return len(self.time_tensor)
-    
-    def __getitem__(self, idx):
-        return self.time_tensor[idx], self.r_grid_tensor[idx], self.y_tensor[idx]
+        self.day_min = day_min
+        self.day_max = day_max
+        self.minute_interval = minute_interval
         
     def get_time_series(self):
 
         if torch.cuda.is_available():
             return self.time_tensor.cuda(), self.y_tensor.cuda()
-        self.y_tensor = torch.clamp(self.y_tensor, min=0, max=1)
-        return self.time_tensor, self.y_tensor
+        
+        y = torch.clamp(self.y_tensor, min=1e-7, max=1 - 1e-7)
+        
+        periodic_time = periodic_mapping(self.time_tensor, day_min=self.day_min, day_max=self.day_max, minute_interval=self.minute_interval)
+        X = torch.stack([self.time_tensor, periodic_time], dim=-1)
+
+        return X, y
+
+class PVDataLoader(Dataset):
+    """ 
+    Custom dataset for the PV data to use from the CV folds
+
+    Args:
+        X (torch.tensor): list of input data
+        y (torch.tensor): list of target data
+    """
+    def __init__(self, X : list, y : list):
+        assert len(X) == len(y), 'X and y must have the same length'
+        self.x = X
+        self.y = y
+
+    def __getitem__(self, index):
+        return self.x[index], self.y[index]
+    
+    def __len__(self):
+        return len(self.x)
     
 
-if __name__ == '__main__':
-    load_data(folder_name='pv_data', file_name='pv_data_clean.csv')

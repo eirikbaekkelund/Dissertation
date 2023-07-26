@@ -1,43 +1,72 @@
+from abc import ABC, abstractmethod
 import torch
 import gpytorch
 import optuna
 
-from gpytorch.kernels import MaternKernel, PeriodicKernel, ScaleKernel, ProductKernel, AdditiveKernel
-from src.models import ApproximateGPBaseModel, ExactGPModel
-from src.beta_likelihood import BetaLikelihood_MeanParametrization
+from gpytorch.kernels import (MaternKernel, 
+                              PeriodicKernel, 
+                              ScaleKernel, 
+                              AdditiveKernel)
+from models import ApproximateGPBaseModel, MultitaskGPModel
+from baselines import (ExponentialSmoothingModel,
+                       SimpleExpSmoothingModel,
+                       AutoRegressionModel,
+                       ARIMAModel,
+                       SARIMAXModel,
+                       MarkovAutoregressionModel)
+
+from beta_likelihood import BetaLikelihood_MeanParametrization
 
 # set seed for reproducibility
 torch.manual_seed(42)
 
-class HyperParameterOptimization:
+class HyperOptBase(ABC):
     """ 
-    Hyperparameter optimization using Optuna.
-
-    Args:
-        model (gpytorch.models.Model): model to optimize
-        x_train (torch.Tensor): training inputs
-        y_train (torch.Tensor): training targets
-        x_test (torch.Tensor): test inputs
-        y_test (torch.Tensor): test targets
+    Base class for hyperparameter optimization.
     """
 
     def __init__(self, 
-                 model : str,
-                 x_train : torch.Tensor,
-                 y_train : torch.Tensor,
-                 x_test : torch.Tensor,
-                 y_test : torch.Tensor,
-                ):
-        assert model in ['approximate', 'exact'], 'Model must be either approximate or exact'
-        self.model = model
-        self.x_train = x_train
-        self.y_train = y_train
-        self.x_test = x_test
-        self.y_test = y_test
+                 train_loader : torch.utils.data.DataLoader,
+                 test_loader : torch.utils.data.DataLoader,
+                 ):
+        assert len(train_loader) == len(test_loader), 'train and test loader must have the same length'
 
-    def sample_params_matern(self,
-                             trial : optuna.trial.Trial
-                             ):
+        self.train_loader = train_loader
+        self.test_loader = test_loader
+    
+    @abstractmethod
+    def sample_params(self, trial : optuna.trial.Trial):
+        pass
+
+    @abstractmethod
+    def instantiate_model(self, y_tr, y_te, trial : optuna.trial.Trial):
+        pass
+
+    @abstractmethod
+    def objective(self, trial : optuna.trial.Trial):
+        pass
+
+class GPHyperOptBase(HyperOptBase):
+    """ 
+    Hyperparameter optimization using Optuna for a Quasi-Periodic GP model.
+
+    Args:
+        train_loader (torch.utils.data.DataLoader): training data loader
+        test_loader (torch.utils.data.DataLoader): test data loader
+        num_latents (int, optional): number of latent functions. Defaults to 1.
+    """
+
+    def __init__(self, 
+                train_loader : torch.utils.data.DataLoader,
+                test_loader : torch.utils.data.DataLoader,
+                 num_latents : int = 1,
+                ):
+        
+        assert len(train_loader) == len(test_loader), 'train and test loader must have the same length'
+        super().__init__(train_loader=train_loader, test_loader=test_loader)
+        self.num_latents = num_latents
+
+    def sample_params_matern(self, trial : optuna.trial.Trial):
         """ 
         Sample hyperparameters for the model using a Matern kernel.
 
@@ -59,27 +88,20 @@ class HyperParameterOptimization:
         # create kernel
         matern = MaternKernel(nu=3/2,
                               lengthscale_prior=gpytorch.priors.GammaPrior(lengthscale_shape, lengthscale_rate),
-                              lengthscale_constraint=gpytorch.constraints.Positive()
-                                )
+                              lengthscale_constraint=gpytorch.constraints.Positive(),
+                              batch_shape=torch.Size([self.num_latents])
+                            )
         scaled_matern = ScaleKernel(matern,
                                     outputscale_prior=gpytorch.priors.GammaPrior(signal_shape, signal_rate),
-                                    outputscale_constraint=gpytorch.constraints.Positive()
-                                    )
+                                    outputscale_constraint=gpytorch.constraints.Interval(0.05, 1),
+                                    batch_shape=torch.Size([self.num_latents])
+                                )
         return scaled_matern
     
-    def sample_params_periodic(self,
-                               trial : optuna.trial.Trial
-                              ):
+    def sample_params_periodic(self, trial : optuna.trial.Trial):
         """
         Sample hyperparameters for the model using a periodic kernel.
-
-        Args:
-            trial (optuna.trial.Trial): Optuna
-        
-        Returns:
-            kernel (gpytorch.kernels.Kernel): kernel of the model
         """
-        # sample hyperparameters
         lengthscale_shape = trial.suggest_float('periodic_L_shape', 1, 10, step=1)
         lengthscale_rate = trial.suggest_float('period_L_rate', 1, 10, step=1)
 
@@ -89,201 +111,247 @@ class HyperParameterOptimization:
         signal_periodic_shape = trial.suggest_float('signal_periodic_shape', 1, 10, step=1)
         signal_periodic_rate = trial.suggest_float('signal_periodic_rate', 1, 10, step=1)
 
-
-
-        periodic = PeriodicKernel(lengthscale_prior=gpytorch.priors.GammaPrior(lengthscale_shape, lengthscale_rate),
+        periodic = PeriodicKernel(  lengthscale_prior=gpytorch.priors.GammaPrior(lengthscale_shape, lengthscale_rate),
                                     lengthscale_constraint=gpytorch.constraints.Positive(),
                                     period_prior=gpytorch.priors.GammaPrior(period_shape, period_rate),
-                                    period_constraint=gpytorch.constraints.Positive()
+                                    period_constraint=gpytorch.constraints.Positive(),
+                                    batch_shape=torch.Size([self.num_latents])
                                     )
         scaled_periodic = ScaleKernel(periodic,
                                     outputscale_prior=gpytorch.priors.GammaPrior(signal_periodic_shape, signal_periodic_rate),
-                                    outputscale_constraint=gpytorch.constraints.Positive()
+                                    outputscale_constraint=gpytorch.constraints.Positive(),
+                                    batch_shape=torch.Size([self.num_latents])
                                     )
         return scaled_periodic
     
     
-    def sample_params_quasi_periodic(self,
-                                     trial : optuna.trial.Trial
-                                    ):
+    def sample_params_quasi_periodic(self,trial : optuna.trial.Trial):
         """
         Sample hyperparameters for the model using a quasi-periodic kernel.
-
-        Args:
-            trial (optuna.trial.Trial): Optuna
-        
-        Returns:
-            kernel (gpytorch.kernels.Kernel): kernel of the model
         """
         matern = self.sample_params_matern(trial)
         periodic = self.sample_params_periodic(trial)
-
-        product_kernel = ProductKernel(matern, periodic)
-
-        quasi_periodic = AdditiveKernel(product_kernel, matern)
+        prod_kernel = ScaleKernel(matern * periodic,
+                                outputscale_prior=gpytorch.priors.GammaPrior(5, 2),
+                                outputscale_constraint=gpytorch.constraints.Interval(0.1, 1),
+                                batch_shape=torch.Size([self.num_latents])
+                                    )
+        quasi_periodic = AdditiveKernel(prod_kernel, matern)
 
         return quasi_periodic
-        
-    def sample_params_likelihood(self,
-                                 trial : optuna.trial.Trial
-                                ):
-        """
-        Sample hyperparameters for the likelihood.
-
-        Args:
-            trial (optuna.trial.Trial): Optuna
-        
-        Returns:
-            likelihood (gpytorch.likelihoods.Likelihood): likelihood of the model
-        """
-        likelihood_scale = trial.suggest_int('likelihood_scale', 1, 30, step=5)
-        likelihood_correcting_scale = trial.suggest_float('likelihood_correcting_scale', 1, 3, step=1)
-        
-        likelihood = BetaLikelihood_MeanParametrization(scale=likelihood_scale,
-                                                        correcting_scale=likelihood_correcting_scale,
-                                                        lower_bound=0.2,
-                                                        upper_bound=0.9)
-                                                        
-        return likelihood                                      
-
-    def get_config(self,
-                   config : dict,
-                   kernel : gpytorch.kernels.Kernel,
-                   likelihood : gpytorch.likelihoods.Likelihood,
-                   jitter : float,
-                   idx : int = None):
-        """
-        Get the configuration of the model.
-
-        Args:
-            config (dict): configuration of the model
-            kernel (gpytorch.kernels.Kernel): kernel of the model
-            likelihood (gpytorch.likelihoods.Likelihood): likelihood of the model
-            jitter (float): jitter for the cholesky decomposition
-        
-        Returns:
-            inputs (dict): dictionary of inputs for the model
-        """
-        config = {
-            'type': 'stochastic',
-            'name': 'mean_field',
-            'num_inducing_points': self.x_train.size(0),
-            'mean_init_std': 1,
-        }
-        
-        if idx is not None:
-            y = self.y_train[:, idx]
-        else:
-            y = self.y_train
-
-        inputs = {
-            'X': self.x_train,
-            'y': y,
-            'mean_module': gpytorch.means.ConstantMean(),
-            'covar_module': kernel,
-            'likelihood': likelihood,
-            'config': config,
-            'jitter': jitter
-        }
-
-        return inputs
     
+    def sample_mean(self, 
+                    trial : optuna.trial.Trial):
+        """
+        Sample the mean of the model.
+        """
+        mean_type = trial.suggest_categorical('mean_type', ['constant', 'zero'])
 
-    def train(self,
-              inputs : dict,
-              trial : optuna.trial.Trial,
-              idx : int = None
-              ):
+        if mean_type == 'constant':
+            return gpytorch.means.ConstantMean(batch_shape=torch.Size([self.num_latents]))
+        elif mean_type == 'zero':
+            return gpytorch.means.ZeroMean(batch_shape=torch.Size([self.num_latents]))
+
+    def sample_params(self, trial : optuna.trial.Trial):
         """ 
-        Train the model with the sampled hyperparameters.
-
-        Args:
-            inputs (dict): dictionary of inputs for the model
-            trial (optuna.trial.Trial): Optuna
-        
-        Returns:
-            float: negative log likelihood
+        Sample the model parameters.
         """
-        model = ApproximateGPBaseModel(**inputs)
-        #n_iter = trial.suggest_int('n_iter', 100, 500, step=100)
-        lr = trial.suggest_float('lr', 0.1, 0.4, step=0.1)
-
-        model.fit(n_iter=300, 
-                  lr=lr, 
-                  optim=torch.optim.Adam, 
-                  device=torch.device('cpu'),
-                  verbose=False)
-        
-        with torch.no_grad():
-            trained_pred_dist = model.likelihood(model(self.x_test))
-        
-        if idx is not None:
-            nlpd = gpytorch.metrics.negative_log_predictive_density(trained_pred_dist, self.y_test[:, idx])
-        else:
-            nlpd = gpytorch.metrics.negative_log_predictive_density(trained_pred_dist, self.y_test)
-        
-        # if negative infinity, replace with 0, happens when the 
-        # likelihood is close to 0 or 1 where we have scaled the beta mean - this should be met with a warning
-        
-        if torch.isinf(nlpd).any():
-            print('WARNING: negative log predictive density is -infinity, highly peaked likelihood. Scale param is too high.')
-
-        nlpd = torch.where(torch.isinf(nlpd), torch.zeros_like(nlpd), nlpd)
-        # msll = gpytorch.metrics.mean_standardized_log_loss(self.y_test, trained_pred_dist.mean)
-        
-        # return median to avoid outliers
-        return nlpd.median()
-    
-    def get_loss(self,
-                trial : optuna.trial.Trial,
-                config : dict,
-                kernel : gpytorch.kernels.Kernel,
-                likelihood : gpytorch.likelihoods.Likelihood,
-                jitter : float,
-                idx : int = None
-                ):
-        """
-        Loss function that handle the PSD not positive error for 
-        ill-conditioned matrices.
-        """
-        try:
-            inputs = self.get_config(config, kernel, likelihood, jitter, idx)
-            loss = self.train(inputs, trial, idx)
-        except:
-            inputs = self.get_config(config, kernel, likelihood, jitter*10, idx)
-            loss = self.train(inputs, trial, idx)
-        
-        return loss
-        
-    def objective(self,
-                  trial : optuna.trial.Trial,
-                  config : dict,
-                  jitter : float,
-                 ):
-        """ 
-        Objective function for Optuna.
-
-        Args:
-            trial (optuna.trial.Trial): Optuna
-        
-        Returns:
-            float: negative log predictive density
-        """
-    
         kernel = self.sample_params_quasi_periodic(trial)
-        likelihood = self.sample_params_likelihood(trial)
+        mean = self.sample_mean(trial)
+
+        return mean, kernel
+    
+    @abstractmethod
+    def get_likelihood(self, trial : optuna.trial.Trial):
+        pass
+            
+    @abstractmethod
+    def instantiate_model(self, x_tr, y_tr, trial : optuna.trial.Trial):
+        pass
+    
+    @abstractmethod
+    def metric(self, y_dist, target):
+        pass
+
+    @abstractmethod    
+    def objective(self, trial : optuna.trial.Trial):
+        pass
+
+class HyperOptBetaGP(GPHyperOptBase):
+    def __init__(self,
+                train_loader : torch.utils.data.DataLoader,
+                test_loader : torch.utils.data.DataLoader,
+                ):
+        super().__init__(train_loader=train_loader,
+                         test_loader=test_loader,
+                         num_latents=1)
+    
+    def get_likelihood(self, trial : optuna.trial.Trial):
+        """ 
+        Sample the likelihood of the model.
+        """
+        likelihood_scale = trial.suggest_int('likelihood_scale', 1, 60, step=5)        
+        likelihood = BetaLikelihood_MeanParametrization(scale=likelihood_scale)
+                                                        
+        return likelihood         
+
+    def instantiate_model(self, 
+                          x_tr : torch.Tensor, 
+                          y_tr : torch.Tensor, 
+                          jitter : float, 
+                          trial : optuna.trial.Trial):
+        """ 
+        Create a model instance.
+        """
+        mean_module, kernel = self.sample_params(trial)
+        likelihood = self.get_likelihood(trial)
+        config = {
+            'type' : 'stochastic',
+            'name' : 'mean_field',
+            'num_inducing_points' : x_tr.size(0),
+            'mean_init_std' : 1,
+        }
+        inputs = {'x_train': x_tr,
+                    'y_train': y_tr,
+                    'likelihood': likelihood,
+                    'mean_module': mean_module,
+                    'covar_module': kernel,
+                    'config' : config,
+                    'jitter': jitter
+                    }
+        model = ApproximateGPBaseModel(**inputs)
+        model.fit(n_iter=10, lr=0.2, verbose=True)
+        return model
+
+    def metric(self, y_dist, target):
+        """
+        Metric to optimize.
+        """
+        return gpytorch.metrics.negative_log_predictive_density(y_dist, target).median()
+    
+    def objective(self, trial : optuna.trial.Trial):
+        """
+        Objective function to minimize.
+        """
+        losses = []
+
+        # iterate over folds 
+        for (x_tr, y_tr), (x_te, y_te) in zip(self.train_loader, self.test_loader):
+            # iterate over each series in the fold
+            for i in range(y_tr.shape[1]):
+                jitter = 1e-4
+                # fit model for each series
+                try:
+                    model = self.instantiate_model(x_tr, y_tr[:,i], jitter, trial)
+                
+                except:
+                    print('Not PSD error, adding jitter')
+                    jitter *= 10
+                    try:
+                        model = self.instantiate_model(x_tr, y_tr[:,i], jitter, trial)
+                    except:
+                        continue
+
+                # get predictive distribution
+                with torch.no_grad():
+                    trained_pred_dist = model.likelihood(model(x_te))
+                
+                # calculate metric
+                nlpd = self.metric(trained_pred_dist, y_te[:,i])
+                losses.append(nlpd)
         
-        if len(self.y_train.shape) > 1: 
-            
-            losses = []
-            
-            # get loss for each output if several time series
-            for i in range(self.y_train.shape[1]):
-                loss = self.get_loss(trial, config, kernel, likelihood, jitter, i)
-                losses.append(loss)
-            
-            return torch.mean(torch.tensor(losses, dtype=torch.float32))
+        return torch.mean(torch.tensor(losses), dtype=torch.float32)
+
+
+class HyperOptMultitaskGP(GPHyperOptBase):
+    def __init__(self,
+            train_loader : torch.utils.data.DataLoader,
+            test_loader : torch.utils.data.DataLoader,
+            num_latents : int = 5
+            ):
+        super().__init__(train_loader=train_loader,
+                         test_loader=test_loader,
+                         num_latents=num_latents)
         
-        else:
-            loss = self.get_loss(trial, config, kernel, likelihood, jitter)
-            return loss
+    # TODO make beta likelihood for SVI multitask
+
+    def get_likelihood(self, trial : optuna.trial.Trial):
+        likelihood = gpytorch.likelihoods.MultitaskGaussianLikelihood(num_tasks=self.n_tasks)
+        return likelihood
+                                        
+
+    def instantiate_model(self, 
+                          x_tr : torch.Tensor, 
+                          y_tr : torch.Tensor, 
+                          jitter : float, 
+                          trial : optuna.trial.Trial):
+        """ 
+        Create a model instance.
+        """
+        mean_module, kernel = self.sample_params(trial)
+        likelihood = self.get_likelihood(trial)
+
+        inputs = {'x_train': x_tr,
+                    'y_train': y_tr,
+                    'likelihood': likelihood,
+                    'mean_module': mean_module,
+                    'covar_module': kernel,
+                    'num_latents' : self.num_latents,
+                    'jitter': jitter
+                    }
+        
+
+        model = MultitaskGPModel(**inputs)
+        model.fit(n_iter=10, lr=0.2, verbose=True)
+        return model
+
+    def metric(self, y_dist, target):
+        """
+        Metric to optimize.
+        """
+        return gpytorch.metrics.negative_log_predictive_density(y_dist, target).median()
+    
+    def objective(self, trial : optuna.trial.Trial):
+        """
+        Objective function to minimize.
+        """
+        losses = []
+
+        # iterate over folds 
+        for (x_tr, y_tr), (x_te, y_te) in zip(self.train_loader, self.test_loader):
+            # iterate over each series in the fold
+            self.n_tasks = y_tr.shape[1]
+            for i in range(y_tr.shape[1]):
+                jitter = 1e-4
+                # fit model for each series
+                try:
+                    model = self.instantiate_model(x_tr, y_tr, jitter, trial)
+                
+                except:
+                    print('Not PSD error, adding jitter')
+                    jitter *= 10
+                    model = self.instantiate_model(x_tr, y_tr, jitter, trial)
+
+                # get predictive distribution
+                with torch.no_grad():
+                    trained_pred_dist = model.likelihood(model(x_te))
+                
+                # calculate metric
+                nlpd = self.metric(trained_pred_dist, y_te)
+                losses.append(nlpd)
+        
+        return torch.mean(torch.tensor(losses), dtype=torch.float32)
+    
+class ExpSmoothingHyperOpt(HyperOptBase):
+    """ 
+    Hyperparameter optimization using Optuna for an exponential smoothing model.
+    """
+    def sample_params(self, trial: optuna.trial.Trial):
+        """
+        Sample hyperparameters for the model.
+        """
+        smoothing_level = trial.suggest_float('smoothing_level', 0.0, 1.0)
+        smoothing_slope = trial.suggest_float('smoothing_slope', 0.0, 1.0)
+        damping_slope = trial.suggest_float('damping_slope', 0.0, 1.0)
+        return smoothing_level, smoothing_slope, damping_slope
+    

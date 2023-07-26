@@ -1,42 +1,75 @@
-from statsmodels.tsa.api import AutoReg, ARIMA, SARIMAX, ExponentialSmoothing, MarkovAutoregression
+from statsmodels.tsa.api import (AutoReg, 
+                                 ARIMA, 
+                                 SARIMAX, 
+                                 ExponentialSmoothing, 
+                                 SimpleExpSmoothing,
+                                 MarkovAutoregression)
 
-class ExponentialModels(ExponentialSmoothing):
-    """ 
-    Global class for exponential smoothing models
+from abc import ABC, abstractmethod
 
-    Args:
-        time_train (torch.Tensor): training time
-        y_train (torch.Tensor): training data
-        time_test (torch.Tensor): test time
-        y_test (torch.Tensor): test data
+class TimeSeriesBase(ABC):
     """
-    def __init__(self, y_train, y_test, trend):
-        super(ExponentialModels, self).__init__(y_train, trend=trend)
+    Base class for exponential smoothing models
+    """
+    def __init__(self, y_train, y_test):
+        # 
         self.y_train = y_train
         self.y_test = y_test
     
-    def single_exponential_smoothing(self, alpha : float = 0.2):
-        """
-        Single exponential smoothing model
-        
-        Args:
-            alpha (float): smoothing parameter
-        """
-        self.fit(smoothing_level=alpha, optimized=False)
-        return self.forecast(len(self.y_test))
-    
-    def double_exponential_smoothing(self, alpha : float = 0.2, beta : float = 0.2, trend : str = 'add'):
-        """
-        Double exponential smoothing model
-        
-        Args:
-            alpha (float): smoothing parameter for level
-            beta (float): smoothing parameter for trend
-            trend (str): type of trend to use
-        """
-        assert trend in ['add', 'mul'], 'trend must be either add or mul'
+    def predict(self, **kwargs):
+        return self.model.fit(**kwargs).forecast(steps=len(self.y_test))
 
-        self.fit(smoothing_level=alpha, smoothing_trend=beta, optimized=False, use_brute=True)
-        return self.forecast(len(self.y_test))
 
-# TODO: Add more models for baselines
+class ExponentialSmoothingModel(TimeSeriesBase):
+    """
+    Exponential smoothing model
+    """
+    def __init__(self, y_train, y_test, **kwargs):
+        super().__init__(y_train, y_test)
+        self.model = ExponentialSmoothing(endog=self.y_train, **kwargs)
+
+class SimpleExpSmoothingModel(TimeSeriesBase):
+    """
+    Simple exponential smoothing model
+    """
+    def __init__(self, y_train, y_test, **kwargs):
+        super().__init__(y_train, y_test)
+        self.model = SimpleExpSmoothing(endog=self.y_train, **kwargs)
+
+
+class AutoRegressionModel(TimeSeriesBase):
+    """
+    Auto regression model
+    """
+    def __init__(self, y_train, y_test, **kwargs):
+        super().__init__(y_train, y_test)
+        self.model = AutoReg(endog=self.y_train, **kwargs)
+
+
+class ARIMAModel(TimeSeriesBase):
+    """
+    ARIMA model
+    """
+    def __init__(self, y_train, y_test, **kwargs):
+        super().__init__(y_train, y_test)
+        self.model = ARIMA(endog=self.y_train, **kwargs)
+
+
+class SARIMAXModel(TimeSeriesBase):
+    """
+    SARIMAX model
+    """
+    def __init__(self, y_train, y_test, **kwargs):
+        super().__init__(y_train, y_test)
+        self.model = SARIMAX(endog=self.y_train, **kwargs)
+
+
+class MarkovAutoregressionModel(TimeSeriesBase):
+    """
+    Markov autoregression model
+    """
+    def __init__(self, y_train, y_test, **kwargs):
+        super().__init__(y_train, y_test)
+        self.model = MarkovAutoregression(endog=self.y_train, **kwargs)
+
+
