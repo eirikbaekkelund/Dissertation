@@ -16,8 +16,7 @@ class MultitaskGPModel(ApproximateGP):
                  mean_module : gpytorch.means.Mean = None,
                  covar_module : gpytorch.kernels.Kernel = None,
                  num_latents : int = 1,
-                 jitter : float = 1e-4
-                 ):
+                 jitter : float = 1e-4):
         # check that num_latents is consistent with the batch_shape of the mean and covar modules
         assert num_latents == mean_module.batch_shape[0], 'num_latents must be equal to the batch_shape of the mean module'
         assert num_latents == covar_module.batch_shape[0], 'num_latents must be equal to the batch_shape of the covar module'

@@ -72,7 +72,7 @@ class MultitaskBetaLikelihood(BetaLikelihood_MeanParametrization):
     """
     def __init__(
         self,
-        n_tasks: int,
+        num_tasks: int,
         scale = 15,
         batch_shape: torch.Size = torch.Size([]),
         scale_prior: Optional[Prior] = None,
@@ -83,7 +83,7 @@ class MultitaskBetaLikelihood(BetaLikelihood_MeanParametrization):
         if scale_constraint is None:
             scale_constraint = Positive()
 
-        self.raw_scale = torch.nn.Parameter(torch.ones(*batch_shape, 1, n_tasks))
+        self.raw_scale = torch.nn.Parameter(torch.ones(*batch_shape, 1, num_tasks))
         if scale_prior is not None:
             self.register_prior("scale_prior", scale_prior, lambda m: m.scale, lambda m, v: m._set_scale(v))
 

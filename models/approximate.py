@@ -3,7 +3,7 @@ import torch
 from gpytorch.models import ApproximateGP
 from gpytorch.variational import VariationalStrategy
 from gpytorch.distributions import MultivariateNormal
-from variational import VariationalBase
+from models.variational import VariationalBase
 
 
 class ApproximateGPBaseModel(ApproximateGP):
@@ -139,7 +139,7 @@ class ApproximateGPBaseModel(ApproximateGP):
         
         with torch.no_grad():
            
-            if not isinstance(self.likelihood, GaussianLikelihood):
+            if not isinstance(self.likelihood, gpytorch.likelihoods.GaussianLikelihood):
                 with gpytorch.settings.num_likelihood_samples(30):
                     # TODO if beta likelihood then predict using the mode
                     # the mode should give the most likely value for the prediction
