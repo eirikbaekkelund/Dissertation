@@ -5,7 +5,6 @@ from gpytorch.variational import (CholeskyVariationalDistribution,
                                   NaturalVariationalDistribution, 
                                   TrilNaturalVariationalDistribution )
 
-
 class VariationalBase:
     """ 
     Class for creating variational distributions based on specifications 

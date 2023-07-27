@@ -1,4 +1,3 @@
-from abc import ABC
 import torch
 import gpytorch
 import numpy as np
@@ -16,10 +15,6 @@ from alfi.utilities.data import flatten_dataset
 from alfi.datasets import LFMDataset
 from src.kernel import SIMKernel
 
-
-########################################
-#######  Exact GP Model Class ##########
-########################################
 
 class ExactGPModel(ExactGP):
     """ 
@@ -119,11 +114,7 @@ class ExactGPModel(ExactGP):
             preds = self.likelihood(self(X)) 
             
         return preds
-    
 
-########################################
-####  Approximate GP Model Classes  ####
-########################################
 
 # TODO maybe use UnwhitenedVariationalStrategy instead of VariationalStrategy for having exact inducing points
 # TODO possibly add natural gradients
@@ -270,12 +261,7 @@ class ApproximateGPBaseModel(ApproximateGP):
                 preds = self.likelihood(self(X))
             
         return preds
-
-# TODO implement MultiTaskModel (variational and exact)
     
-########################################
-##########  MultiTaskModel  ############
-########################################
 
 class MultitaskGPModel(gpytorch.models.ApproximateGP):
     def __init__(self,
@@ -292,15 +278,14 @@ class MultitaskGPModel(gpytorch.models.ApproximateGP):
         assert num_latents == covar_module.batch_shape[0], 'num_latents must be equal to the batch_shape of the covar module'
 
         num_tasks = y_train.size(-1)
-       # x_train = x_train.repeat(num_latents, 1, 1)
         
         # MeanField constructs a variational distribution for each output dimension
         variational_distribution = MeanFieldVariationalDistribution(
-            x_train.size(-2), batch_shape=torch.Size([num_latents]),jitter=jitter
+            x_train.size(0), batch_shape=torch.Size([num_latents]),jitter=jitter
         )
         
         # LMC constructs MultitaskMultivariateNormal from the base var dist
-        variational_strategy = gpytorch.variational.LMCVariationalStrategy(
+        variational_strategy = LMCVariationalStrategy(
             gpytorch.variational.VariationalStrategy(
                 self, x_train, variational_distribution, learn_inducing_locations=False, jitter_val=jitter
             ),
@@ -367,9 +352,6 @@ class MultitaskGPModel(gpytorch.models.ApproximateGP):
         else:
             raise NotImplementedError('Likelihood not implemented')
 
-########################################
-##########  Latent Force Model  ########
-########################################
 
 class ExactLFM(LFM, gpytorch.models.ExactGP):
     """
@@ -471,5 +453,85 @@ class ExactLFM(LFM, gpytorch.models.ExactGP):
         lfm = cls(*lfm_args, **lfm_kwargs)
         lfm.load_state_dict(lfm_state_dict)
         return lfm
+    
+
+class KalmanFilterSmoother():
+    def __init__(self, F, Q, H, R):
+        self.F = F
+        self.Q = Q
+        self.H = H
+        self.R = R
+        
+    def _predict(self, x, P):
+        F = self.F
+        Q = self.Q
+        return torch.matmul(F, x), F @ torch.matmul(P, F.transpose(-2, -1)) + Q
+
+    def _filter_update(self, x, P, y):
+        R = self.R
+        H = self.H
+        # Compute Kalman gain matrix
+        if not torch.isnan(y).any():
+            S = H @ torch.matmul(P, H.transpose(-2, -1)) + R
+            chol = torch.linalg.cholesky(S)
+            Kt = torch.linalg.cholesky_solve(H @ P, chol)
+            Hx = torch.matmul(H, x)
+            return x + torch.matmul(Kt, y - Hx), P - torch.matmul(Kt, torch.matmul(S, Kt.transpose(-2, -1)))
+        else:
+            return x, P
+
+    def _smoother_update(self, x_now, x_next, x_forecast, P_now, P_next, P_forecast):
+        F = self.F
+        # Compute smoothing gain
+        chol = torch.linalg.cholesky(P_forecast)
+        Jt = torch.linalg.cholesky_solve(F @ P_now, chol)
+        # Update
+        xnew = x_now + torch.matmul(Jt, x_next - x_forecast)
+        Pnew = P_now + torch.matmul(Jt, torch.matmul(P_next - P_forecast, Jt.transpose(-2, -1)))
+        return xnew, Pnew
+
+    def forward_pass(self, x, P, y_list):
+        """ Calling the forward pass gives us the filtering distribution.
+            Args:
+                x: torch tensor of shape (d,) where d is the spatial dimension
+                P: torch tensor of shape (d, d)
+                y_list: list of torch tensors of shape (N, d) containing a list of observations at N timepoints.
+                        Note that when there is no observation at time n, then set y_list[n] = torch.tensor([float('nan')])
+        """
+        means = []
+        covariances = []
+        for y in y_list:
+            x, P = self._filter_update(x, P, y)
+            means.append(x)
+            covariances.append(P)
+            x, P = self._predict(x, P)
+        return torch.stack(means), torch.stack(covariances)
+
+    def backward_pass(self, x, P):
+        """ Calling the backward pass gives us the smoothing distribution. This should be called after applying the forward pass.
+            Args:
+                x: torch tensor of shape (N, d) where N is the number of forward time steps and d is the spatial dimension
+                P: torch tensor of shape (N, d, d)
+        """
+        F = self.F
+        N = x.shape[0]
+        means = [x[-1]]
+        covariances = [P[-1]]
+        for n in range(N-2, -1, -1):
+            # Forecast
+            xf, Pf = self._predict(x[n], P[n])
+            # Update
+            xnew, Pnew = self._smoother_update(x[n], x[n+1], xf, P[n], P[n+1], Pf)
+            means.append(xnew)
+            covariances.append(Pnew)
+        return torch.flip(torch.stack(means), [0]), torch.flip(torch.stack(covariances), [0])
+
+    def __call__(self, x0, P0, y_list):
+        """ Compute the smoothing distribution by applying the forward and backward pass in sequence.
+            Args: same as in self.forward_pass
+        """
+        x, P = self.backward_pass(*self.forward_pass(x0, P0, y_list))
+        return x, P
+
 
 # TODO implement GPAR (Gaussian Process Autoregressive Regression)

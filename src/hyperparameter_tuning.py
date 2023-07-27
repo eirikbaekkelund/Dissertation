@@ -27,8 +27,7 @@ class HyperOptBase(ABC):
 
     def __init__(self, 
                  train_loader : torch.utils.data.DataLoader,
-                 test_loader : torch.utils.data.DataLoader,
-                 ):
+                 test_loader : torch.utils.data.DataLoader):
         assert len(train_loader) == len(test_loader), 'train and test loader must have the same length'
 
         self.train_loader = train_loader
@@ -59,7 +58,7 @@ class GPHyperOptBase(HyperOptBase):
     def __init__(self, 
                 train_loader : torch.utils.data.DataLoader,
                 test_loader : torch.utils.data.DataLoader,
-                 num_latents : int = 1,
+                num_latents : int = 1,
                 ):
         
         assert len(train_loader) == len(test_loader), 'train and test loader must have the same length'
@@ -185,7 +184,11 @@ class HyperOptBetaGP(GPHyperOptBase):
         super().__init__(train_loader=train_loader,
                          test_loader=test_loader,
                          num_latents=1)
-    
+        self.config = {'type' : 'stochastic',
+                        'name' : 'mean_field',
+                        'mean_init_std' : 1,
+                        }
+
     def get_likelihood(self, trial : optuna.trial.Trial):
         """ 
         Sample the likelihood of the model.
@@ -198,28 +201,18 @@ class HyperOptBetaGP(GPHyperOptBase):
     def instantiate_model(self, 
                           x_tr : torch.Tensor, 
                           y_tr : torch.Tensor, 
-                          jitter : float, 
-                          trial : optuna.trial.Trial):
+                          jitter : float):
         """ 
         Create a model instance.
         """
-        mean_module, kernel = self.sample_params(trial)
-        likelihood = self.get_likelihood(trial)
-        config = {
-            'type' : 'stochastic',
-            'name' : 'mean_field',
-            'num_inducing_points' : x_tr.size(0),
-            'mean_init_std' : 1,
-        }
-        inputs = {'x_train': x_tr,
-                    'y_train': y_tr,
-                    'likelihood': likelihood,
-                    'mean_module': mean_module,
-                    'covar_module': kernel,
-                    'config' : config,
-                    'jitter': jitter
-                    }
-        model = ApproximateGPBaseModel(**inputs)
+      
+        self.config['num_inducing_points'] = x_tr.size(0)
+        self.inputs['x_train'] =  x_tr
+        self.inputs['y_train'] =  y_tr
+        self.inputs['jitter'] = jitter
+        self.inputs['config'] = self.config
+        
+        model = ApproximateGPBaseModel(**self.inputs)
         model.fit(n_iter=10, lr=0.2, verbose=True)
         return model
 
@@ -234,8 +227,15 @@ class HyperOptBetaGP(GPHyperOptBase):
         Objective function to minimize.
         """
         losses = []
-
+        mean_module, kernel = self.sample_params(trial)
+        likelihood = self.get_likelihood(trial)
+       
+        self.inputs = {'likelihood': likelihood,
+                        'mean_module': mean_module,
+                        'covar_module': kernel,
+                        }
         # iterate over folds 
+       
         for (x_tr, y_tr), (x_te, y_te) in zip(self.train_loader, self.test_loader):
             # iterate over each series in the fold
             for i in range(y_tr.shape[1]):
@@ -272,6 +272,8 @@ class HyperOptMultitaskGP(GPHyperOptBase):
         super().__init__(train_loader=train_loader,
                          test_loader=test_loader,
                          num_latents=num_latents)
+
+        self.inputs =  {'num_latents': num_latents}
         
     # TODO make beta likelihood for SVI multitask
 
@@ -283,25 +285,16 @@ class HyperOptMultitaskGP(GPHyperOptBase):
     def instantiate_model(self, 
                           x_tr : torch.Tensor, 
                           y_tr : torch.Tensor, 
-                          jitter : float, 
-                          trial : optuna.trial.Trial):
+                          jitter : float,
+                        ):
         """ 
         Create a model instance.
         """
-        mean_module, kernel = self.sample_params(trial)
-        likelihood = self.get_likelihood(trial)
+        self.inputs['x_train'] =  x_tr
+        self.inputs['y_train'] =  y_tr
+        self.inputs['jitter'] = jitter     
 
-        inputs = {'x_train': x_tr,
-                    'y_train': y_tr,
-                    'likelihood': likelihood,
-                    'mean_module': mean_module,
-                    'covar_module': kernel,
-                    'num_latents' : self.num_latents,
-                    'jitter': jitter
-                    }
-        
-
-        model = MultitaskGPModel(**inputs)
+        model = MultitaskGPModel(**self.inputs)
         model.fit(n_iter=10, lr=0.2, verbose=True)
         return model
 
@@ -316,6 +309,12 @@ class HyperOptMultitaskGP(GPHyperOptBase):
         Objective function to minimize.
         """
         losses = []
+        likelihood = self.get_likelihood(trial)
+        mean_module, kernel = self.sample_params(trial)
+        
+        self.inputs['likelihood'] = likelihood
+        self.inputs['mean_module'] = mean_module
+        self.inputs['covar_module'] = kernel
 
         # iterate over folds 
         for (x_tr, y_tr), (x_te, y_te) in zip(self.train_loader, self.test_loader):

@@ -4,7 +4,8 @@ import torch
 import numpy as np
 import pandas as pd
 from gpytorch.metrics import negative_log_predictive_density as nlpd
-from models import ApproximateGPBaseModel, MultitaskGPModel
+from models.approximate import ApproximateGPBaseModel
+from models.multitask import MultitaskGPModel
 from data_loader import PVDataLoader
 
 def mae(y_pred, y_true):
