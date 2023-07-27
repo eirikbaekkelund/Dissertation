@@ -1,7 +1,13 @@
+import torch
+import gpytorch
+import numpy as np
+from gpytorch.distributions import MultivariateNormal
 from alfi.models.lfm import LFM
 from alfi.means import SIMMean
 from kernels.sim import SIMKernel
-from alfi.datasets import LFMDataset, flatten_dataset
+from alfi.datasets import LFMDataset
+from alfi.utilities.data import flatten_dataset
+
 
 class ExactLFM(LFM, gpytorch.models.ExactGP):
     """
@@ -16,7 +22,7 @@ class ExactLFM(LFM, gpytorch.models.ExactGP):
      
         self.train_t = train_t
         self.train_y = train_y
-       
+       # TODO consider if variance should have a gradient
         self.covar_module = SIMKernel(self.num_outputs, torch.tensor(variance, requires_grad=False))
         initial_basal = torch.mean(train_y.view(self.num_outputs, -1), dim=1) * self.covar_module.decay
         self.mean_module = SIMMean(self.covar_module, self.num_outputs, initial_basal)
@@ -32,7 +38,7 @@ class ExactLFM(LFM, gpytorch.models.ExactGP):
     def forward(self, x):
 
         x.flatten()
-        
+        # TODO may remove probit transform of mean
         mean_x = self.mean_module(x)
         covar_x = self.covar_module(x) 
 
@@ -41,36 +47,50 @@ class ExactLFM(LFM, gpytorch.models.ExactGP):
     def predict_m(self, pred_t, jitter=1e-3) -> torch.distributions.MultivariateNormal:
         """
         Predict outputs of the LFM
-        :param pred_t: prediction times
-        :param jitter:
-        :return:
+        
+        Args:
+            pred_t (torch.Tensor): Prediction times
+            jitter (float, optional): Jitter to add to the diagonal of the covariance matrix. Defaults to 1e-3.
+        
+        Returns:
+            torch.distributions.MultivariateNormal: Predicted outputs
         """
+        pred_t_blocked = pred_t.repeat(self.num_outputs)
+        
         Kxx = self.covar_module(self.train_t, self.train_t)
         K_inv = torch.inverse(Kxx.evaluate())
-        pred_t_blocked = pred_t.repeat(self.num_outputs)
+                
         K_xxstar = self.covar_module(self.train_t, pred_t_blocked).evaluate()
         K_xstarx = torch.transpose(K_xxstar, 0, 1).type(torch.float64)
+        
         K_xstarxK_inv = torch.matmul(K_xstarx, K_inv)
         KxstarxKinvY = torch.matmul(K_xstarxK_inv.double(), self.train_y.double())
-        mean = KxstarxKinvY.view(self.num_outputs, pred_t.shape[0])
-
         K_xstarxstar = self.covar_module(pred_t_blocked, pred_t_blocked).evaluate()
+        
         var = K_xstarxstar - torch.matmul(K_xstarxK_inv, torch.transpose(K_xstarx, 0, 1))
+        
         var = torch.diagonal(var, dim1=0, dim2=1).view(self.num_outputs, pred_t.shape[0])
-        mean = mean.transpose(0, 1)
         var = var.transpose(0, 1)
         var = torch.diag_embed(var)
         var += jitter * torch.eye(var.shape[-1])
- 
+        
+        mean = KxstarxKinvY.view(self.num_outputs, pred_t.shape[0])
+        mean = mean.transpose(0, 1)
+        
+
+
         return MultivariateNormal(mean, var)
 
     def predict_f(self, pred_t, jitter=1e-5) -> MultivariateNormal:
         """
         Predict the latent function.
 
-        :param pred_t: Prediction times
-        :param jitter:
-        :return:
+        Args:
+            pred_t (torch.Tensor): Prediction times
+            jitter (float, optional): Jitter to add to the diagonal of the covariance matrix. Defaults to 1e-5.
+        
+        Returns:
+            MultivariateNormal: Predicted latent function
         """
         Kxx = self.covar_module(self.train_t, self.train_t)
         K_inv = torch.inverse(Kxx.evaluate())
@@ -103,4 +123,3 @@ class ExactLFM(LFM, gpytorch.models.ExactGP):
         lfm = cls(*lfm_args, **lfm_kwargs)
         lfm.load_state_dict(lfm_state_dict)
         return lfm
-    

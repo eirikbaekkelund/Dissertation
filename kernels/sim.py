@@ -1,11 +1,12 @@
 import torch
 import gpytorch
+import numpy as np
 from gpytorch.constraints import Positive, Interval
 from gpytorch.kernels import Kernel
 from gpytorch.lazy import DiagLazyTensor
 from gpytorch.utils.transforms import inv_softplus
-from math import pi as PI
 
+PI = torch.tensor(np.pi, requires_grad=False)
 
 class SIMKernel(gpytorch.kernels.Kernel):
     """
@@ -22,12 +23,13 @@ class SIMKernel(gpytorch.kernels.Kernel):
         self.num_genes = num_genes
         # TODO fix constraints
         self.pos_constraint = Positive()
-        self.lengthscale_constraint = Interval(0.1, 10)
+        len_max = 0.08
+        self.lengthscale_constraint = Interval(0.01, len_max)
         
         # TODO fix constraints
         self.register_parameter(
             name='raw_lengthscale', parameter=torch.nn.Parameter(
-                self.lengthscale_constraint.inverse_transform(torch.ones(1, 1, dtype=dtype) ))
+                self.lengthscale_constraint.inverse_transform(torch.tensor([len_max]) * torch.ones(1, 1, dtype=dtype) ))
         )
         self.register_parameter(
             name='raw_decay', parameter=torch.nn.Parameter(

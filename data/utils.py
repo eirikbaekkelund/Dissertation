@@ -6,12 +6,6 @@ import xarray as xr
 import datetime
 import time
 from shapely.geometry import Polygon, Point
-from torch.utils.data import Dataset
-
-
-#########################################################
-###############       PREPROCESSING       ###############
-#########################################################
 
 def load_data(folder_name, file_name):
     """ 
