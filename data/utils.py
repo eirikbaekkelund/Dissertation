@@ -220,7 +220,7 @@ def periodic_mapping(time_steps, day_min, day_max, minute_interval):
     normalized_minutes = (time_steps * minute_interval) % total_minutes  # Normalize time steps to minutes
 
     # Apply periodic mapping using sine function
-    mapped_values = torch.sin(torch.pi * normalized_minutes / total_minutes)
+    mapped_values = torch.sin(np.pi * normalized_minutes / total_minutes)
     
     return mapped_values
 

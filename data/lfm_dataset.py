@@ -76,7 +76,7 @@ class PV_LFM_Dataset(TranscriptomicTimeSeries):
         super().__init__()
 
         self.num_outputs = m_observed.shape[1] if len(m_observed.shape) > 1 else 1
-        self.f_observed = f_observed.view(1, 1, len(train_t))
+        self.f_observed = f_observed
         self.t_observed = train_t
         self.times = train_t
         self.variance = variance
