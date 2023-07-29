@@ -1,7 +1,6 @@
 import torch
 import gpytorch
 import numpy as np
-from gpytorch.variational import VariationalStrategy
 from gpytorch.variational import (VariationalStrategy, 
                                   LMCVariationalStrategy,
                                   MeanFieldVariationalDistribution)
@@ -30,13 +29,17 @@ class MultitaskGPModel(ApproximateGP):
         
         # LMC constructs MultitaskMultivariateNormal from the base var dist
         variational_strategy = LMCVariationalStrategy(
-            gpytorch.variational.VariationalStrategy(
-                self, x_train, variational_distribution, learn_inducing_locations=False, jitter_val=jitter
-            ),
-            num_tasks=num_tasks,
-            num_latents=num_latents,
-            latent_dim=-1
-        )
+                            VariationalStrategy(
+                                    model=self, 
+                                    inducing_points=x_train, 
+                                    variational_distribution=variational_distribution, 
+                                    learn_inducing_locations=False, 
+                                    jitter_val=jitter
+                                ),
+                            num_tasks=num_tasks,
+                            num_latents=num_latents,
+                            latent_dim=-1
+                        )
         
         super().__init__(variational_strategy)
         

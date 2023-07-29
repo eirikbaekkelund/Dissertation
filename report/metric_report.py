@@ -6,7 +6,7 @@ import pandas as pd
 from gpytorch.metrics import negative_log_predictive_density as nlpd
 from models.approximate import ApproximateGPBaseModel
 from models.multitask import MultitaskGPModel
-from data_loader import PVDataLoader
+from data.loader import PVDataLoader
 
 def mae(y_pred, y_true):
     if isinstance(y_pred, torch.Tensor):

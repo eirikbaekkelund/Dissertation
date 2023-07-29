@@ -2,7 +2,6 @@ import torch
 import gpytorch
 import numpy as np
 from gpytorch.distributions import base_distributions
-from gpytorch.likelihoods import _OneDimensionalLikelihood
 from gpytorch.constraints import Positive, Interval
 from gpytorch.priors import Prior
 from typing import Optional
@@ -74,11 +73,12 @@ class MultitaskBetaLikelihood(BetaLikelihood_MeanParametrization):
         self,
         num_tasks: int,
         scale = 15,
+        correcting_scale = 1,
         batch_shape: torch.Size = torch.Size([]),
         scale_prior: Optional[Prior] = None,
         scale_constraint: Optional[Interval] = None,
     ) -> None:
-        super().__init__(scale)
+        super().__init__(scale=scale, correcting_scale=correcting_scale)
 
         if scale_constraint is None:
             scale_constraint = Positive()

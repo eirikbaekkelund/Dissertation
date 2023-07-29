@@ -79,7 +79,7 @@ class ApproximateGPBaseModel(ApproximateGP):
         
         Returns:
             latent_u (gpytorch.distributions.MultivariateNormal): GP model 
-                                                                   f(x), where f ~ GP( m(x), k(x, x))
+            f(x), where f ~ GP( m(x), k(x, x))
         """
         mu = self.mean_module(x)
         k = self.covar_module(x)
@@ -132,7 +132,7 @@ class ApproximateGPBaseModel(ApproximateGP):
             device (torch.device): device to make predictions on
 
         Returns:
-            preds (gpytorch.distributions.MultivariateNormal): predictive mean and variance
+            preds (gpytorch.distributions.Distribution): marginal predictive distribution 
         """
         self.eval()
         self.likelihood.eval()
