@@ -14,7 +14,7 @@ def mae(y_pred, y_true):
     if isinstance(y_true, torch.Tensor):
         y_true = y_true.numpy()
         
-    return np.mean(np.abs(y_pred - y_true))
+    return np.abs(y_pred - y_true)
 
 class MetricReport(ABC):
     """ 
@@ -187,7 +187,7 @@ class MultitaskGPReport(MetricReport):
         return model
    
     def metrics(self, pred_dist, y_te):
-        neg_log_pred = nlpd(pred_dist, y_te).median().item()
+        neg_log_pred = nlpd(pred_dist, y_te)
         mae_mean = mae(pred_dist.mean, y_te)
         return neg_log_pred, mae_mean
 

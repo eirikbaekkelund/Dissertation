@@ -35,7 +35,7 @@ def load_data(folder_name, file_name):
     # check that file is in the remote path
     except IndexError:
         remote_path += f'/{folder_name}'
-    
+
     assert file_name in os.listdir(remote_path)
     
     file_path = os.path.join(remote_path, file_name)
@@ -424,7 +424,28 @@ def extract_time_series(time, y, idx):
 
     return time_series, y_series
 
-def train_test_split(X, y, minute_interval=5, n_hours=8):
+def prediction_index(hour, hourly_points, day_max, n_hours):
+    """ 
+    Get the index of the first data point to predict and
+    the index of the last data point to predict.
+
+    Args:
+        hour (int): hour of the day
+        hourly_points (int): number of data points in an hour
+        day_max (int): maximum hour of the day
+        n_hours (int): number of hours to predict
+    """
+    if hour < 8 or hour > 14:
+        raise ValueError("Hour argument must be an integer between 8 and 14.")
+    
+    end_index = (day_max - hour) * hourly_points - 1
+    start_index = end_index + n_hours * hourly_points
+
+    return int(start_index), int(end_index)
+
+
+
+def train_test_split(X, y, hour, minute_interval=5, day_min=8, day_max=16, n_hours=2):
     """ 
     Splits the data into train and test sets.
     The test set is the last n_hours of the data.
@@ -432,8 +453,12 @@ def train_test_split(X, y, minute_interval=5, n_hours=8):
     Args:
         X (torch.tensor): input data
         y (torch.tensor): target data
-        minute_interval (int): interval between data points in minutes
-        n_hours (int): number of hours to use for test set
+        hour (int): hour of the day
+        minute_interval (int, optional): minute interval between data points. 
+        Defaults to 5.
+        day_min (int, optional): minimum hour of the day. Defaults to 8.
+        day_max (int, optional): maximum hour of the day. Defaults to 16.
+        n_hours (int, optional): number of hours to predict. Defaults to 2.
     
     Returns:
         X_train (torch.tensor): train input data
@@ -443,19 +468,24 @@ def train_test_split(X, y, minute_interval=5, n_hours=8):
     """
     assert X.shape[0] == y.shape[0], 'X and y must have the same number of rows'
 
-    # number of data points in n_hours
-    n_points = int(n_hours * 60 / minute_interval)
+    # number of data points in a day
+    daily_points = (day_max - day_min) * 60 // minute_interval 
+
+    hourly_points = daily_points // (day_max - day_min)
+  
+    start_idx, end_idx = prediction_index(hour, hourly_points, day_max, n_hours)
+    print(f'Predicting {n_hours} hours ahead from {hour}:00')
 
     # split data into train and test sets
-    y_train = y[:-n_points]
-    y_test = y[-n_points:]
+    y_train = y[:-start_idx]
+    y_test = y[-start_idx:-end_idx]
 
     if len(X.shape) == 1:
-        X_train = X[:-n_points]
-        X_test = X[-n_points:]
+        X_train = X[:-start_idx]
+        X_test = X[-start_idx:-end_idx]
     else:
-        X_train = X[:-n_points, :]
-        X_test = X[-n_points:, :]
+        X_train = X[:-start_idx, :]
+        X_test = X[-start_idx:-end_idx, :]
 
     if torch.cuda.is_available():
         return X_train.cuda(), y_train.cuda(), X_test.cuda(), y_test.cuda()

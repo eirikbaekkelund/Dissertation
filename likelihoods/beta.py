@@ -1,6 +1,7 @@
 import torch
 import gpytorch
 import numpy as np
+from torch.nn import Parameter
 from gpytorch.distributions import base_distributions
 from gpytorch.constraints import Positive, Interval
 from gpytorch.priors import Prior
@@ -8,7 +9,14 @@ from typing import Optional
 
 class BetaLikelihood_MeanParametrization(gpytorch.likelihoods.BetaLikelihood):
     
-    def __init__(self, scale, correcting_scale=1, lower_bound=0, upper_bound=1, *args, **kwargs):
+    def __init__(self, 
+                 scale, 
+                 scale_lower_bound=10,
+                 scale_upper_bound=100,
+                 correcting_scale=1, 
+                 lower_bound=0, 
+                 upper_bound=1,
+                 *args, **kwargs):
         
         super().__init__(*args, **kwargs)
         
@@ -17,11 +25,13 @@ class BetaLikelihood_MeanParametrization(gpytorch.likelihoods.BetaLikelihood):
         assert 0 <= lower_bound <= 1, 'lower bound must be in [0, 1]'
         assert 0 <= upper_bound <= 1, 'upper bound must be in [0, 1]'
         assert lower_bound < upper_bound, 'lower bound must be smaller than upper bound'
-        
-        self.scale = scale
+        # set constraint on scale
+        self.register_constraint("raw_scale", Interval(scale_lower_bound, scale_upper_bound))
+        self.correcting_scale = Parameter(torch.tensor(correcting_scale, dtype=torch.float64), requires_grad=False)
+      
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
-        self.correcting_scale = correcting_scale
+    
 
     def forward(self, function_samples, *args, **kwargs):
         

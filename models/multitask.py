@@ -7,6 +7,8 @@ from gpytorch.variational import (VariationalStrategy,
 from gpytorch.models import ApproximateGP
 from gpytorch.distributions import MultivariateNormal
 
+# TODO add parameter tracking
+
 class MultitaskGPModel(ApproximateGP):
     def __init__(self,
                  x_train : torch.Tensor,

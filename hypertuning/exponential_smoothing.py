@@ -14,3 +14,4 @@ class ExpSmoothingHyperOpt(HyperOptBase):
         damping_slope = trial.suggest_float('damping_slope', 0.0, 1.0) 
         return smoothing_level, smoothing_slope, damping_slope
     
+    

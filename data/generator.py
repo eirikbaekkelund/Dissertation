@@ -95,19 +95,24 @@ class PVDataGenerator:
             r_grid, y = remove_nan_systems(r_grid=r_grid, y=y)
 
         self.time_tensor, self.r_grid_tensor, self.y_tensor = convert_grid_to_tensor(time=time, r_grid=r_grid, y=y)
-        self.time_tensor = torch.arange(0, len(self.time_tensor)).float()
+
         self.day_min = day_min
         self.day_max = day_max
         self.minute_interval = minute_interval
         
-    def get_time_series(self):
+    def get_time_series(self, include_periodic : bool = False):
 
-        if torch.cuda.is_available():
-            return self.time_tensor.cuda(), self.y_tensor.cuda()
-        
         y = torch.clamp(self.y_tensor, min=1e-7, max=1 - 1e-7)
         
         periodic_time = periodic_mapping(self.time_tensor, day_min=self.day_min, day_max=self.day_max, minute_interval=self.minute_interval)
-        X = torch.stack([self.time_tensor, periodic_time], dim=-1)
+        time_tensor = torch.linspace(0, 100, len(self.time_tensor)).float()
 
+        if include_periodic:
+            X = torch.stack([time_tensor, periodic_time], dim=-1)
+        else:
+            X = time_tensor
+        
+        if torch.cuda.is_available():
+            return self.time_tensor.cuda(), self.y_tensor.cuda()
+        
         return X, y

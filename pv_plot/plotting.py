@@ -1,9 +1,9 @@
 import matplotlib.pyplot as plt
-from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 import numpy as np
 import torch
 import gpytorch
 from mpl_toolkits.basemap import Basemap
+from typing import Optional
 
 def plot_grid(df, coords, radius=1, distance_method='circle'):
     """
@@ -93,7 +93,8 @@ def plot_train_test_split(y_train, y_test):
 
     plt.xlabel('Time (5 min intervals between 8am and 4pm)', fontsize=13)
     plt.ylabel('PV Production (0-1 Scale)', fontsize=13)
-    
+
+    plt.ylim(-0.01, max(y_train.max(), y_test.max()) + 0.1)
     plt.legend()
     plt.show();
 
@@ -124,7 +125,13 @@ def mode_beta_dist(alpha, beta):
 
     return result
 
-def plot_gp(model, x_train, x_test, y_train, y_test, y_inducing=None, pred_type='mean'):
+def plot_gp(model : gpytorch.models.GP,
+            x_train : torch.Tensor,
+            x_test : torch.Tensor,
+            y_train : torch.Tensor,
+            y_test : torch.Tensor,
+            pred_type : str = 'mode',
+            title : Optional[str] = None):
     """
     Plot the GP predictions for a given model and data
 
@@ -146,16 +153,15 @@ def plot_gp(model, x_train, x_test, y_train, y_test, y_inducing=None, pred_type=
     
     plt.figure(figsize=(15, 6))
     
+    if plt.title is not None:
+        plt.title(title, fontsize=15)
+    
     
     def plot_observed_data():
         """ 
         Scatters the observed data
         """
-        if y_inducing is not None:
-            inducing_points = torch.arange(0, y_inducing.size(0))
-            plt.scatter(inducing_points, y_inducing, color='k', marker='x', label='Observed Data', alpha=0.4)
-        else:
-            plt.scatter(time_train, y_train, color='k', marker='x', label='Observed Data', alpha=0.4)
+        plt.scatter(time_train, y_train, color='k', marker='x', label='Observed Data', alpha=0.4)
     
     def plot_gaussian_predictions():
         """ 
@@ -166,8 +172,8 @@ def plot_gp(model, x_train, x_test, y_train, y_test, y_inducing=None, pred_type=
 
         with torch.no_grad():
             # plot the means
-            plt.plot(time_train, preds_train.mean, color='b')
-            plt.plot(time_test, preds_test.mean, color='r')
+            plt.plot(time_train, preds_train, color='b')
+            plt.plot(time_test, preds_test, color='r')
 
             # plot the confidence regions
             lower, upper = preds_train.confidence_region()
@@ -264,7 +270,7 @@ def plot_gp(model, x_train, x_test, y_train, y_test, y_inducing=None, pred_type=
     # scatter observed data
     plot_observed_data()
 
-    if isinstance(model.likelihood, gpytorch.likelihoods.BetaLikelihood):
+    if isinstance(model.likelihood, gpytorch.likelihoods.BetaLikelihood) or isinstance(model, gpytorch.models.ApproximateGP):
         plot_approximate_predictions()
     
     elif isinstance(model.likelihood, gpytorch.likelihoods.GaussianLikelihood):
@@ -276,11 +282,9 @@ def plot_gp(model, x_train, x_test, y_train, y_test, y_inducing=None, pred_type=
     # scatter test data
     plt.scatter(time_test, y_test, color='k', alpha=0.4, marker='x')
 
-    ymax = max(y_train.max(), y_test.max()) + 0.1
+    plt.vlines(x=time_train.max(), ymin=-0.05, ymax=1.001, color='black', linestyle='--', label='Train-Test Split')
 
-    plt.vlines(x=time_train.max(), ymin=-0.05, ymax=ymax, color='black', linestyle='--', label='Train-Test Split')
-
-    plt.ylim(-0.01, ymax)
+    plt.ylim(-0.01, 1.001)
     plt.xlabel('Time (5 min intervals between 8am and 4pm)', fontsize=13)
     plt.ylabel('PV Production (0-1 Scale)', fontsize=13)
 
@@ -303,20 +307,4 @@ def plot_alpha_beta(model):
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax2.legend(lines + lines2, labels + labels2, loc='upper right')
 
-    plt.show()
-
-def plot_acf_pacf(y):
-    """
-    Plot the acf and pacf for all systems in a grid
-
-    Args:
-        y (torch.tensor): PV production
-    """
-    _, ax = plt.subplots(2, 1, figsize=(15, 10), sharex=True)
-    
-    for i in range(y.shape[1]):
-        plot_acf(y[:, i], ax=ax[0], alpha=0.2, lags=len(y) // 2, title='ACF', color='b')
-        plot_pacf(y[:, i], ax=ax[1], alpha=0.2, lags=len(y) // 2 - 1, title='PACF', color='b', method='ywm')
-    
-    plt.xlabel('Lag')
     plt.show()

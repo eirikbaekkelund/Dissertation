@@ -4,7 +4,9 @@ from gpytorch.models import ApproximateGP
 from gpytorch.variational import VariationalStrategy
 from gpytorch.distributions import MultivariateNormal
 from models.variational import VariationalBase
+import wandb
 
+# TODO add parameter tracking
 
 class ApproximateGPBaseModel(ApproximateGP):
     """ 
@@ -45,6 +47,7 @@ class ApproximateGPBaseModel(ApproximateGP):
         
         self.X = X
         self.y = y
+        self.config = config
         
         
         variational_distribution = VariationalBase(config).variational_distribution
@@ -89,7 +92,8 @@ class ApproximateGPBaseModel(ApproximateGP):
     def fit(self, 
             n_iter : int, 
             lr : float,
-            verbose : bool = True):
+            verbose : bool = True,
+            use_wandb : bool = False):
         """
         Train the GP model using SVI
 
@@ -103,25 +107,61 @@ class ApproximateGPBaseModel(ApproximateGP):
         self.train()
         self.likelihood.train()
 
+        # TODO add tracking of parameters during training
+        # TODO seperate variational parameters from model parameters during training
+        # TODO natural gradients for model variational parameters 
+        # TODO stochastic gradients for model hyperparameters and likelihood parameters
+
+        if self.config['name'] in ['tril_natural', 'natural']:
+            variational_ngd_optimizer = gpytorch.optim.NGD(self.variational_parameters(), 
+                                                           num_data=self.y.size(0), lr=lr)
+            hyperparameter_optimizer = torch.optim.Adam( self.hyperparameters(), lr=0.01)
+            natural_grad = True
+        else:
+            optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+            natural_grad = False
+        
+        if use_wandb:
+            wandb.init(
+                project ='dissertation',
+                config={'learning_rate': lr, 'epochs': n_iter}
+            )
+        
+
         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
         elbo = gpytorch.mlls.VariationalELBO(likelihood=self.likelihood, 
                                             model=self, 
                                             num_data=self.y.size(0))
         
         print_freq = n_iter // 10
-        self.losses = []
         
         for i in range(n_iter):
-            optimizer.zero_grad()
+            if natural_grad:
+                variational_ngd_optimizer.zero_grad()
+                hyperparameter_optimizer.zero_grad()
+            else:
+                optimizer.zero_grad()
+            
             output = self(self.X)
             loss = -elbo(output, self.y)
             loss.backward()
-            optimizer.step()
-
-            self.losses.append(loss.item())
-
+            
+            if natural_grad:
+                variational_ngd_optimizer.step()
+                hyperparameter_optimizer.step()
+            else:
+                optimizer.step()
+            
+            if use_wandb:
+                log_dict = {name : param.detach().numpy() for name, param in self.named_parameters() if name[:3] != 'var'}
+                log_dict['loss'] = loss.item()
+                wandb.log(log_dict)
+            
             if verbose and (i+1) % print_freq == 0:
                 print(f'Iter {i+1}/{n_iter} - Loss: {loss.item():.3f}')
+        
+        if use_wandb:
+            wandb.finish()
     
     def predict(self, X : torch.Tensor):
         """ 

@@ -47,6 +47,10 @@ class BetaQPGPOneDim(GPQuasiPeriodic):
                 
                 for i in range(y_tr.shape[1]):
                     if y_tr[:,i].isnan().any() or y_te[:,i].isnan().any():
+                        sleep(0.01)
+                        bar()
+                        n_skips += 1
+                        print(f'NaN error, skip nr.: {n_skips}')
                         continue
                     
                     self.config['num_inducing_points'] = x_tr.size(0)
@@ -65,9 +69,5 @@ class BetaQPGPOneDim(GPQuasiPeriodic):
 
                     sleep(0.01)
                     bar()
-            
-            # print progress bar as percentage
-            
-
-        
+                        
         return torch.tensor(self.metrics).mean().item()

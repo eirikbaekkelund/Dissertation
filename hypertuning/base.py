@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import torch
 import optuna
-from kernels.quasi_periodic import generate_quasi_periodic
+from kernels.kernels import generate_quasi_periodic
 from gpytorch.means import ConstantMean, ZeroMean
 from gpytorch.metrics import negative_log_predictive_density as nlpd
 from likelihoods.beta import BetaLikelihood_MeanParametrization, MultitaskBetaLikelihood
@@ -26,6 +26,20 @@ class HyperOptBase(ABC):
         self.study = optuna.create_study(direction=direction)
         self.study.optimize(self.objective, n_trials=n_trials)
         return self.study
+    
+    def save_best_params(self, opt_name : str):
+        """ 
+        Save the best parameters found by Optuna to a file.
+
+        Args:
+            opt_name (str): name of the model
+        """
+        best_params = self.study.best_params
+        best_params['opt_name'] = opt_name
+        torch.save(best_params, f'best_params/{opt_name}.txt')
+
+        
+
     
     @abstractmethod
     def sample_params(self, trial : optuna.trial.Trial):

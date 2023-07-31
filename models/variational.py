@@ -49,6 +49,7 @@ class VariationalBase:
             return CholeskyVariationalDistribution(**config)
         elif name == 'mean_field':
             return MeanFieldVariationalDistribution(**config)
+        
 
     
     def get_natural(self, config):

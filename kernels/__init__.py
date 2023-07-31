@@ -1,2 +1,2 @@
-from .quasi_periodic import generate_quasi_periodic
+from .kernels import Kernel
 from .sim import SIMKernel
