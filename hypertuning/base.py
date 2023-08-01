@@ -37,10 +37,19 @@ class HyperOptBase(ABC):
         best_params = self.study.best_params
         best_params['opt_name'] = opt_name
         torch.save(best_params, f'best_params/{opt_name}.txt')
-
-        
-
     
+    def sample_train_config(self, trial : optuna.trial.Trial):
+        """
+        Sample the training configuration.
+        """
+        # sample learning rate between 0.05 and 0.3 with step size 0.05
+        lr = trial.suggest_int('lr * 100', 5, 30, step=5) / 100
+        # sample number of epochs between 100 and 500 with step size 100
+        epochs = trial.suggest_int('epochs', 100, 500, step=100)
+
+        return {'lr' : lr, 'n_iter' : epochs}
+
+
     @abstractmethod
     def sample_params(self, trial : optuna.trial.Trial):
         """
@@ -84,23 +93,7 @@ class GPQuasiPeriodic(HyperOptBase):
         """
         Sample the parameters of the quasi-periodic kernel.
         """
-        alpha_matern = trial.suggest_int('alpha_matern', 1, 10, step=1)
-        beta_matern = trial.suggest_int('beta_matern', 5, 15, step=1)
         
-        alpha_periodic_L = trial.suggest_int('alpha_periodic', 1, 10, step=1)
-        beta_periodic_L = trial.suggest_int('beta_periodic', 1, 10, step=1)
-
-        alpha_periodic_P = trial.suggest_int('alpha_periodic_P', 1, 10, step=1)
-        beta_periodic_P = trial.suggest_int('beta_periodic_P', 1, 10, step=1)
-
-        covar_module = generate_quasi_periodic(num_latent=self.num_latents,
-                                                matern_alpha=alpha_matern,
-                                                matern_beta=beta_matern,
-                                                periodic_alpha_L=alpha_periodic_L,
-                                                periodic_beta_L=beta_periodic_L,
-                                                periodic_alpha_P=alpha_periodic_P,
-                                                periodic_beta_P=beta_periodic_P)
-
         return covar_module
     
     def get_mean(self, 
@@ -108,7 +101,7 @@ class GPQuasiPeriodic(HyperOptBase):
         """
         Sample the mean of the model.
         """
-        mean_type = trial.suggest_categorical('mean_type', ['constant', 'zero'])
+        mean_type = trial.suggest_categorical('mean', ['constant', 'zero'])
 
         if mean_type == 'constant':
             return ConstantMean(batch_shape=torch.Size([self.num_latents]))
@@ -116,16 +109,16 @@ class GPQuasiPeriodic(HyperOptBase):
             return ZeroMean(batch_shape=torch.Size([self.num_latents]))
     
     def get_likelihood(self, trial : optuna.trial.Trial):
-        scale = trial.suggest_int('scale', 1, 20, step=5)
-        correcting_scale = trial.suggest_int('correcting_scale', 1, 3, step=1)
-
+        bound = trial.suggest_int('scale upper bound', 1, 20, step=5)
+        scale = 10 if bound > 10 else bound
+        
         if self.num_latents == 1:
             return BetaLikelihood_MeanParametrization(scale=scale,
-                                                    correcting_scale=correcting_scale)
+                                                      scale_upper_bound=bound)
         else:
             return MultitaskBetaLikelihood(scale=scale,
-                                           correcting_scale=correcting_scale,
-                                           num_tasks=self.num_tasks)
+                                           num_tasks=self.num_tasks,
+                                           scale_upper_bound=bound)
 
     def sample_params(self, trial : optuna.trial.Trial):
         """ 
@@ -137,6 +130,7 @@ class GPQuasiPeriodic(HyperOptBase):
         self.inputs['mean_module'] = mean
         self.inputs['covar_module'] = covar
         self.inputs['likelihood'] = likelihood
+        self.train_config = self.sample_train_config(trial)
 
     def metric(self, y_dist, target):
         """ 

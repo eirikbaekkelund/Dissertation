@@ -4,6 +4,7 @@ from gpytorch.models import ApproximateGP
 from gpytorch.variational import VariationalStrategy
 from gpytorch.distributions import MultivariateNormal
 from models.variational import VariationalBase
+from data.utils import store_gp_module_parameters
 import wandb
 
 # TODO add parameter tracking
@@ -73,6 +74,16 @@ class ApproximateGPBaseModel(ApproximateGP):
         """
         return self.variational_strategy.inducing_points
     
+    
+    def warm_start(self, params : dict):
+        """ 
+        Warm start the model with the given parameters
+
+        Args:
+            params (dict): parameters
+        """
+        self.load_state_dict(params)
+    
     def forward(self, x):
         """ 
         Model prediction of the GP model
@@ -107,10 +118,9 @@ class ApproximateGPBaseModel(ApproximateGP):
         self.train()
         self.likelihood.train()
 
-        # TODO add tracking of parameters during training
-        # TODO seperate variational parameters from model parameters during training
-        # TODO natural gradients for model variational parameters 
-        # TODO stochastic gradients for model hyperparameters and likelihood parameters
+        # seperate variational parameters from model parameters during training
+        # stochastic gradients for model hyperparameters and likelihood parameters
+        # natural gradients for variational parameters
 
         if self.config['name'] in ['tril_natural', 'natural']:
             variational_ngd_optimizer = gpytorch.optim.NGD(self.variational_parameters(), 
@@ -134,7 +144,9 @@ class ApproximateGPBaseModel(ApproximateGP):
                                             num_data=self.y.size(0))
         
         print_freq = n_iter // 10
-        
+        losses = []
+        # j is tracker for number of iterations without improvement
+        j = 0
         for i in range(n_iter):
             if natural_grad:
                 variational_ngd_optimizer.zero_grad()
@@ -153,12 +165,25 @@ class ApproximateGPBaseModel(ApproximateGP):
                 optimizer.step()
             
             if use_wandb:
-                log_dict = {name : param.detach().numpy() for name, param in self.named_parameters() if name[:3] != 'var'}
+                log_dict = store_gp_module_parameters(self)
                 log_dict['loss'] = loss.item()
                 wandb.log(log_dict)
             
             if verbose and (i+1) % print_freq == 0:
                 print(f'Iter {i+1}/{n_iter} - Loss: {loss.item():.3f}')
+            
+            losses.append(loss.item())
+            
+            # if loss does not improve by more than 0.1% for 15 iterations, stop training
+            if i > 0:
+                if abs(losses[-2] - losses[-1]) < 0.0001:
+                    j += 1
+                    if j == 15:
+                        print(f'Early stopping at iter {i+1}')
+                        break
+                else:
+                    j = 0
+
         
         if use_wandb:
             wandb.finish()
@@ -172,18 +197,18 @@ class ApproximateGPBaseModel(ApproximateGP):
             device (torch.device): device to make predictions on
 
         Returns:
-            preds (gpytorch.distributions.Distribution): marginal predictive distribution 
+            preds (gpytorch.distributions.Distribution): marginalized posterior predictive distribution
+            Uses MC sampling for non-Gaussian likelihoods
         """
         self.eval()
         self.likelihood.eval()
         
         with torch.no_grad():
-           
+            # MC samples for non-Gaussian likelihoods
             if not isinstance(self.likelihood, gpytorch.likelihoods.GaussianLikelihood):
                 with gpytorch.settings.num_likelihood_samples(30):
-                    # TODO if beta likelihood then predict using the mode
-                    # the mode should give the most likely value for the prediction
                     preds = self.likelihood(self(X)) 
+            # Closed form for Gaussian likelihoods
             else:
                 preds = self.likelihood(self(X))
             

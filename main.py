@@ -9,6 +9,7 @@ from kernels import Kernel
 from gpytorch.means import ZeroMean
 from gpytorch.constraints import Interval, Positive
 from gpytorch.metrics import negative_log_predictive_density as nlpd
+from gpytorch.utils.errors import NotPSDError
 
 seed = 42
 torch.manual_seed(seed)
@@ -26,7 +27,7 @@ if __name__ == "__main__":
     RADIUS = 0.35
     COORDS = (55, -1.5)
     POLY_COORDS = ((50, -6), (50.5, 1.9), (57.6, -5.5), (58, 1.9))
-    JITTER = 1e-4
+    JITTER = 1e-3
 
     generator = generator = PVDataGenerator(n_days=N_DAYS,
                     day_init=DAY_INIT,
@@ -56,7 +57,7 @@ if __name__ == "__main__":
     matern_base = kernel.get_matern(lengthscale_constraint=Positive())
     matern_quasi = kernel.get_matern(lengthscale_constraint=Interval(0.3, 1000.0))
     periodic1 = kernel.get_periodic(lengthscale_constraint= Positive())
-    #periodic2 = kernel.get_periodic(lengthscale_constraint= Interval(0.1, 1000.0))
+    periodic2 = kernel.get_periodic(lengthscale_constraint= Interval(0.1, 1000.0))
 
     quasi_periodic = kernel.get_quasi_periodic(matern_base=matern_base, 
                                             matern_quasi=matern_quasi,
@@ -84,7 +85,9 @@ if __name__ == "__main__":
         inputs['y'] = y_train[:,idx]
         
         model_beta = ApproximateGPBaseModel(**inputs)
-        model_beta.fit(n_iter=400, lr=0.1,  verbose=True, use_wandb=True)
-        plot_gp(model_beta, x_train, x_test, y_train[:,idx], y_test[:,idx])
+        try:
+            model_beta.fit(n_iter=400, lr=0.1,  verbose=True, use_wandb=True)
+            plot_gp(model_beta, x_train, x_test, y_train[:,idx], y_test[:,idx], 'all')
         
-    
+        except NotPSDError as e:
+            print(e, 'skipping...')

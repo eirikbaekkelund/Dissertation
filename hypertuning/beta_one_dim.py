@@ -30,7 +30,7 @@ class BetaQPGPOneDim(GPQuasiPeriodic):
         Create the model.
         """
         self.model = ApproximateGPBaseModel(**self.inputs)
-        self.model.fit(n_iter=200, lr=0.2, verbose=False)
+        self.model.fit(**self.train_config)
 
     def objective(self, trial : optuna.trial.Trial):
         """ 
@@ -39,7 +39,9 @@ class BetaQPGPOneDim(GPQuasiPeriodic):
         self.sample_params(trial)
         
         n_skips = 0
+       
         total = len(self.train_loader)
+        
         with alive_bar(total) as bar:
             for (x_tr, y_tr), (x_te, y_te) in zip(self.train_loader, self.test_loader):
                 

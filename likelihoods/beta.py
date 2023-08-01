@@ -14,37 +14,44 @@ class BetaLikelihood_MeanParametrization(gpytorch.likelihoods.BetaLikelihood):
                  scale_lower_bound=10,
                  scale_upper_bound=100,
                  correcting_scale=1, 
-                 lower_bound=0, 
-                 upper_bound=1,
+                 correcting_scale_lower_bound=0, 
+                 correcting_scale_upper_bound=1,
                  *args, **kwargs):
         
         super().__init__(*args, **kwargs)
         
         assert scale > 0, 'scale must be positive'
         assert correcting_scale > 0, 'scale must be positive'
-        assert 0 <= lower_bound <= 1, 'lower bound must be in [0, 1]'
-        assert 0 <= upper_bound <= 1, 'upper bound must be in [0, 1]'
-        assert lower_bound < upper_bound, 'lower bound must be smaller than upper bound'
+        assert 0 <= correcting_scale_lower_bound <= 1, 'lower bound must be in [0, 1]'
+        assert 0 <= correcting_scale_upper_bound <= 1, 'upper bound must be in [0, 1]'
+        assert correcting_scale_lower_bound < correcting_scale_upper_bound, 'lower bound must be smaller than upper bound'
+        
         # set constraint on scale
         self.register_constraint("raw_scale", Interval(scale_lower_bound, scale_upper_bound))
-        self.correcting_scale = Parameter(torch.tensor(correcting_scale, dtype=torch.float64), requires_grad=False)
-      
-        self.lower_bound = lower_bound
-        self.upper_bound = upper_bound
-    
+        
+        self.correcting_scale = Parameter(torch.tensor(correcting_scale, dtype=torch.float64), 
+                                            requires_grad=False)
 
+        self.scale_lower_bound = scale_lower_bound
+        self.scale_upper_bound = scale_upper_bound
+    
     def forward(self, function_samples, *args, **kwargs):
         
         mixture = torch.distributions.Normal(0, 1).cdf(function_samples)
-        eps = 1e-9
-        
-        # TODO possibly adjust scale for multitask Beta likelihood
-        alpha = mixture * self.scale + eps
-        beta = self.scale - alpha + eps
 
-        # corrects the alpha and beta parameters if the mixture is close to the bounds
-        self.alpha = torch.where((mixture > self.lower_bound) | (mixture < self.upper_bound), self.correcting_scale * alpha, alpha)
-        self.beta = torch.where((mixture > self.lower_bound) | (mixture < self.upper_bound), self.correcting_scale * beta, beta)
+        self.alpha = mixture * self.scale 
+        self.beta = self.scale - self.alpha 
+
+        # self.alpha = torch.where((mixture > self.correcting_scale_lower_bound) | 
+        #                          (mixture < self.correcting_scale_upper_bound), 
+        #                          self.correcting_scale * alpha, alpha)
+        
+        # self.beta = torch.where((mixture > self.correcting_scale_lower_bound) | 
+        #                         (mixture < self.correcting_scale_upper_bound), 
+        #                         self.correcting_scale * beta, beta)
+        
+        self.alpha = torch.clamp(self.alpha, 1e-10, 1e10)
+        self.beta = torch.clamp(self.beta, 1e-10, 1e10)
 
         return base_distributions.Beta(concentration1=self.alpha, concentration0=self.beta)
     

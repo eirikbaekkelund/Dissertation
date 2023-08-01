@@ -1,6 +1,7 @@
 import torch
 import gpytorch
 import numpy as np
+import wandb
 from gpytorch.variational import (VariationalStrategy, 
                                   LMCVariationalStrategy,
                                   MeanFieldVariationalDistribution)
@@ -58,27 +59,45 @@ class MultitaskGPModel(ApproximateGP):
       
         return MultivariateNormal(mean_x, covar_x)
     
-    def fit(self, n_iter : int, lr : float, verbose : bool = False):
+    def fit(self, 
+            n_iter : int,
+            lr : float, 
+            verbose : bool = False,
+            use_wandb : bool = False):
             
-            self.train()
-            self.likelihood.train()
+        self.train()
+        self.likelihood.train()
+
+        if use_wandb:
+            wandb.init(
+                project ='dissertation',
+                config={'learning_rate': lr, 'epochs': n_iter}
+            )
+        
+        mll = gpytorch.mlls.VariationalELBO(self.likelihood, self, num_data=self.y_train.size(0))
+        optim = torch.optim.Adam(self.parameters(), lr=lr)
+        
+        print_freq = n_iter // 10
+        
+        for i in range(n_iter):
             
-            mll = gpytorch.mlls.VariationalELBO(self.likelihood, self, num_data=self.y_train.size(0))
-            optim = torch.optim.Adam(self.parameters(), lr=lr)
+            optim.zero_grad()
+            output = self(self.x_train)
+            loss = -mll(output, self.y_train)
+            loss.backward()
+            optim.step()
             
-            print_freq = n_iter // 10
+            if verbose and (i+1) % print_freq == 0:
+                print(f'Iter {i+1}/{n_iter} - Loss: {loss.item()}')
             
-            for i in range(n_iter):
-                
-                optim.zero_grad()
-                output = self(self.x_train)
-                loss = -mll(output, self.y_train)
-                loss.backward()
-                optim.step()
-                
-                if verbose and (i+1) % print_freq == 0:
-                    print(f'Iter {i+1}/{n_iter} - Loss: {loss.item()}')
-    
+            if use_wandb:
+                log_dict = store_gp_module_parameters(self)
+                log_dict['loss'] = loss.item()
+                wandb.log(log_dict)
+        
+        if use_wandb:
+            wandb.finish()
+        
     def predict(self, likelihood, x):
     
         if isinstance(self.likelihood, gpytorch.likelihoods.MultitaskGaussianLikelihood):

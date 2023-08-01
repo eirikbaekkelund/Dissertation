@@ -443,8 +443,6 @@ def prediction_index(hour, hourly_points, day_max, n_hours):
 
     return int(start_index), int(end_index)
 
-
-
 def train_test_split(X, y, hour, minute_interval=5, day_min=8, day_max=16, n_hours=2):
     """ 
     Splits the data into train and test sets.
@@ -508,7 +506,10 @@ def cross_val_fold(X, y, n_days, daily_points):
         time (torch.tensor): time data
     """
     interval = int(n_days * daily_points)
-    x_list = [X[i:i+interval, :] for i in range(0, len(X), interval)]
+   
+    x_list = [X[i:i+interval, :] if len(X.shape) > 1 else X[i:i+interval] 
+              for i in range(0, len(X), interval)]
+    
     y_list = [y[i:i+interval] for i in range(0, len(y), interval)]
 
     return x_list, y_list
@@ -551,9 +552,14 @@ def train_test_split_fold(x_list, y_list, n_hours_pred, daily_points, day_min, d
         x_tr = x_list[i][:-start_idx]
         x_te = x_list[i][-start_idx:-last_hr_idx]
 
-        time = torch.arange(0, len(x_tr) + len(x_te)).float()
-        x_tr[:,0] = time[:len(x_tr)]
-        x_te[:,0] = time[len(x_tr):]
+        time = torch.arange(0, 100, len(x_tr) + len(x_te)).float()
+        
+        if len(x_tr.shape) > 1:
+            x_tr[:,0] = time[:len(x_tr)]
+            x_te[:,0] = time[len(x_tr):]
+        else:
+            x_tr = time[:len(x_tr)]
+            x_te = time[len(x_tr):]
 
         x_train.append(x_tr)
         x_test.append(x_te)
@@ -562,3 +568,42 @@ def train_test_split_fold(x_list, y_list, n_hours_pred, daily_points, day_min, d
         y_test.append(y_list[i][-start_idx:-last_hr_idx])
 
     return x_train, y_train, x_test, y_test
+
+def rgetattr(o, k_list):
+    """
+    Function for deep accessing objects
+
+    For example:
+    > rgetattr(o, ['a', 'b']) == o.a.b
+    """
+    for k in k_list:
+        o = getattr(o, k)
+    return o
+
+def store_gp_module_parameters(model, n_digits=4, verbose=False):
+    """
+    Store and print GPyTorch modules in a conveninent way
+    (Specifically made for the GP model for tracking purposes
+    in weights and biases)
+    """
+    param_dict = {}
+    with torch.no_grad():
+        for param_name, param in model.named_parameters():
+            # not store variational strategy parameters
+            if param_name[:3] == 'var':
+                continue
+            
+            param_name = param_name.replace('raw_', '')
+            param = rgetattr(model, param_name.split("."))
+            
+            if verbose:
+                print(
+                    f'Name: {param_name:35}\n'
+                    f'Value: {param.numpy().round(n_digits)}\n'
+                )
+                print(f'Real value: {param.numpy().round(n_digits)}\n')
+                print('-' * 50)
+            param = param.reshape(1)
+            param_dict[param_name] = param.numpy().round(n_digits)
+            
+    return param_dict
