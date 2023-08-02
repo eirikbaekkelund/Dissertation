@@ -424,6 +424,34 @@ def extract_time_series(time, y, idx):
 
     return time_series, y_series
 
+def get_daily_points(day_min, day_max, minute_interval):
+    """ 
+    Get the number of data points per day
+
+    Args:
+        day_min (int): minimum hour of the day
+        day_max (int): maximum hour of the day
+        minute_interval (int): interval between data points in minutes
+    
+    Returns:
+        daily_points (int): number of data points per day
+    """
+    return ((day_max - day_min)) * 60 // minute_interval
+
+def get_hourly_points(day_min, day_max, minute_interval):
+    """ 
+    Get the number of data points per hour
+
+    Args:
+        day_min (int): minimum hour of the day
+        day_max (int): maximum hour of the day
+        minute_interval (int): interval between data points in minutes
+    
+    Returns:
+        hourly_points (int): number of data points per hour
+    """
+    return get_daily_points(day_min, day_max, minute_interval) // (day_max - day_min)
+
 def prediction_index(hour, hourly_points, day_max, n_hours):
     """ 
     Get the index of the first data point to predict and
@@ -466,13 +494,9 @@ def train_test_split(X, y, hour, minute_interval=5, day_min=8, day_max=16, n_hou
     """
     assert X.shape[0] == y.shape[0], 'X and y must have the same number of rows'
 
-    # number of data points in a day
-    daily_points = (day_max - day_min) * 60 // minute_interval 
-
-    hourly_points = daily_points // (day_max - day_min)
+    hourly_points = get_hourly_points(day_min, day_max, minute_interval)
   
     start_idx, end_idx = prediction_index(hour, hourly_points, day_max, n_hours)
-    print(f'Predicting {n_hours} hours ahead from {hour}:00')
 
     # split data into train and test sets
     y_train = y[:-start_idx]
@@ -515,7 +539,7 @@ def cross_val_fold(X, y, n_days, daily_points):
     return x_list, y_list
 
 
-def train_test_split_fold(x_list, y_list, n_hours_pred, daily_points, day_min, day_max):
+def train_test_split_fold(x_list, y_list, n_hours_pred, minute_interval, day_min, day_max):
     """ 
     Split the data into train and test sets
     The test set is a random hour between 8 and 16 - N for all folds 
@@ -524,12 +548,21 @@ def train_test_split_fold(x_list, y_list, n_hours_pred, daily_points, day_min, d
     the day.
 
     Args: 
-        y (list): the list of y values
-        periodic_time (list): list of periodic times
-        n_hours_pred (int): the number of hours to predict
-        daily_points (int): the number of data points per day
+        x_list (list): list of torch.Tensor of shape (n_samples, n_features)
+        y_list (list): list of torch.Tensor of shape (n_samples, n_features)
+        n_hours_pred (int): number of hours to predict
+        minute_interval (int): interval between two consecutive data points
+        day_min (int): minimum day to consider
+        day_max (int): maximum day to consider
+    
+    Returns:
+        tuple: x_train, y_train, x_test, y_test
+    
+    x_train (list): list of torch.Tensor of shape (n_samples, n_features)
+    y_train (list): list of torch.Tensor of shape (n_samples, n_features)
+    x_test (list): list of torch.Tensor of shape (n_samples, n_features)
+    y_test (list): list of torch.Tensor of shape (n_samples, n_features)
     """ 
-    assert daily_points % (day_max - day_min) == 0, "daily_points must be divisible by day_max - day_min"
     assert len(x_list) == len(y_list), "y_list and periodic_time_list must have the same length"
     
     y_train = []
@@ -537,35 +570,26 @@ def train_test_split_fold(x_list, y_list, n_hours_pred, daily_points, day_min, d
     
     x_train = []
     x_test = []
-    
-    hourly_data_points = daily_points // (day_max - day_min) 
-    
-    # indexes going backwards from the end of the array
-    min_start_idx = int(n_hours_pred * hourly_data_points)
-    max_start_idx = int(daily_points)
-    
+  
     for i in range(len(y_list)):
 
-        last_hr_idx = np.random.randint(min_start_idx, max_start_idx)
-        start_idx = last_hr_idx + int((n_hours_pred * hourly_data_points))
-        
-        x_tr = x_list[i][:-start_idx]
-        x_te = x_list[i][-start_idx:-last_hr_idx]
+        hour = np.random.randint(8, 16 - n_hours_pred + 1, 1)[0]
+        x_tr, y_tr, x_te, y_te = train_test_split(x_list[i], 
+                                                  y_list[i], 
+                                                  hour, 
+                                                  minute_interval, 
+                                                  day_min, 
+                                                  day_max, 
+                                                  n_hours_pred)
 
-        time = torch.arange(0, 100, len(x_tr) + len(x_te)).float()
-        
-        if len(x_tr.shape) > 1:
-            x_tr[:,0] = time[:len(x_tr)]
-            x_te[:,0] = time[len(x_tr):]
-        else:
-            x_tr = time[:len(x_tr)]
-            x_te = time[len(x_tr):]
-
+        x = torch.linspace(0,100, y_tr.shape[0] + y_te.shape[0])
+        x_tr = x[:y_tr.shape[0]]
+        x_te = x[y_tr.shape[0]:]
         x_train.append(x_tr)
         x_test.append(x_te)
         
-        y_train.append(y_list[i][:-start_idx])
-        y_test.append(y_list[i][-start_idx:-last_hr_idx])
+        y_train.append(y_tr)
+        y_test.append(y_te)
 
     return x_train, y_train, x_test, y_test
 

@@ -11,6 +11,10 @@ from typing import Optional
 class Kernel:
     """ 
     Class for creating kernels based on specifications
+
+    Args:
+        num_latent (int, optional): number of latent functions. Defaults to 1.
+        Particularly used for LMC in multitask GP.
     """
     def __init__(self, num_latent: int = 1):
         self.num_latent = num_latent

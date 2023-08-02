@@ -88,8 +88,8 @@ def plot_train_test_split(y_train, y_test):
 
     # plot the train-test split cutoff
     plt.vlines( x= time_train[0] + len(time_train), 
-                ymin=-0.01, 
-                ymax=max(y_train.max(), y_test.max()), 
+                ymin=-0.001, 
+                ymax=1.001, 
                 label='Train-Test Split', 
                 color='black', 
                 linestyle='--')
@@ -97,7 +97,7 @@ def plot_train_test_split(y_train, y_test):
     plt.xlabel('Time (5 min intervals between 8am and 4pm)', fontsize=13)
     plt.ylabel('PV Production (0-1 Scale)', fontsize=13)
 
-    plt.ylim(-0.01, max(y_train.max(), y_test.max()) + 0.1)
+    plt.ylim(-0.01, 1.001)
     plt.legend()
     plt.show();
 

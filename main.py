@@ -72,10 +72,7 @@ if __name__ == "__main__":
         'X' : x_train,
         'config': config,
         'jitter': JITTER,
-        'likelihood': BetaLikelihood_MeanParametrization(
-                            scale=15,
-                            scale_upper_bound=10,
-                            scale_lower_bound=1),
+        'likelihood': BetaLikelihood_MeanParametrization(),
         'mean_module': mean,
         'covar_module': quasi_periodic,
         'learn_inducing_locations': False

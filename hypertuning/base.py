@@ -1,9 +1,10 @@
 from abc import ABC, abstractmethod
 import torch
 import optuna
-from kernels.kernels import generate_quasi_periodic
-from gpytorch.means import ConstantMean, ZeroMean
+from kernels import Kernel
+from gpytorch.means import ZeroMean, ConstantMean
 from gpytorch.metrics import negative_log_predictive_density as nlpd
+from gpytorch.constraints import Positive, Interval
 from likelihoods.beta import BetaLikelihood_MeanParametrization, MultitaskBetaLikelihood
 
 class HyperOptBase(ABC):
@@ -45,7 +46,7 @@ class HyperOptBase(ABC):
         # sample learning rate between 0.05 and 0.3 with step size 0.05
         lr = trial.suggest_int('lr * 100', 5, 30, step=5) / 100
         # sample number of epochs between 100 and 500 with step size 100
-        epochs = trial.suggest_int('epochs', 100, 500, step=100)
+        epochs = trial.suggest_int('epochs', 100, 1000, step=100)
 
         return {'lr' : lr, 'n_iter' : epochs}
 
@@ -88,48 +89,57 @@ class GPQuasiPeriodic(HyperOptBase):
         super().__init__(train_loader=train_loader, test_loader=test_loader)
         
         self.num_latents = num_latents
+      
+        self.inputs = {
+            'covar_module' : self.get_quasi_periodic(),
+            'jitter' : 1e-4,
+            'learn_inducing_locations' : False,
+        }
 
-    def get_quasi_periodic(self, trial : optuna.trial.Trial):
+    def get_quasi_periodic(self):
         """
         Sample the parameters of the quasi-periodic kernel.
         """
+        kernel = Kernel()
+        # TODO  maybe add constraints to the parameters of the kernel
+        matern_base = kernel.get_matern(lengthscale_constraint=Positive(),
+                                outputscale_constraint=Positive())
+        matern_quasi = kernel.get_matern(lengthscale_constraint=Interval(0.3, 1000.0),
+                                        outputscale_constraint=Positive())
         
+        periodic = kernel.get_periodic(lengthscale_constraint= Positive(),
+                                        outputscale_constraint=Positive())
+   
+        covar_module = kernel.get_quasi_periodic(matern_base=matern_base,
+                                                matern_quasi=matern_quasi,
+                                                periodic1=periodic)
+
         return covar_module
     
-    def get_mean(self, 
-                    trial : optuna.trial.Trial):
+    def get_mean(self, trial : optuna.trial.Trial):
         """
         Sample the mean of the model.
         """
-        mean_type = trial.suggest_categorical('mean', ['constant', 'zero'])
-
-        if mean_type == 'constant':
-            return ConstantMean(batch_shape=torch.Size([self.num_latents]))
-        else: 
+        mean = trial.suggest_categorical('mean', ['zero', 'constant'])
+        if mean == 'zero':
             return ZeroMean(batch_shape=torch.Size([self.num_latents]))
+        else:
+            return ConstantMean(batch_shape=torch.Size([self.num_latents]))
     
     def get_likelihood(self, trial : optuna.trial.Trial):
-        bound = trial.suggest_int('scale upper bound', 1, 20, step=5)
-        scale = 10 if bound > 10 else bound
-        
+        scale_init = trial.suggest_int('scale_init', 1, 50, step=5)
         if self.num_latents == 1:
-            return BetaLikelihood_MeanParametrization(scale=scale,
-                                                      scale_upper_bound=bound)
+            return BetaLikelihood_MeanParametrization(scale=scale_init)
         else:
-            return MultitaskBetaLikelihood(scale=scale,
-                                           num_tasks=self.num_tasks,
-                                           scale_upper_bound=bound)
+            return MultitaskBetaLikelihood(scale=scale_init,
+                                           num_tasks=self.num_tasks)
 
     def sample_params(self, trial : optuna.trial.Trial):
         """ 
         Sample the model parameters.
         """
-        covar = self.get_quasi_periodic(trial)
-        mean = self.get_mean(trial)
-        likelihood = self.get_likelihood(trial)
-        self.inputs['mean_module'] = mean
-        self.inputs['covar_module'] = covar
-        self.inputs['likelihood'] = likelihood
+        self.inputs['likelihood'] = self.get_likelihood(trial)
+        self.inputs['mean_module'] = self.get_mean(trial)
         self.train_config = self.sample_train_config(trial)
 
     def metric(self, y_dist, target):

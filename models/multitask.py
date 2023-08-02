@@ -7,6 +7,7 @@ from gpytorch.variational import (VariationalStrategy,
                                   MeanFieldVariationalDistribution)
 from gpytorch.models import ApproximateGP
 from gpytorch.distributions import MultivariateNormal
+from data.utils import store_gp_module_parameters
 
 # TODO add parameter tracking
 
@@ -102,21 +103,28 @@ class MultitaskGPModel(ApproximateGP):
     
         if isinstance(self.likelihood, gpytorch.likelihoods.MultitaskGaussianLikelihood):
             with torch.no_grad(), gpytorch.settings.fast_pred_var():
-                dist_train = self.likelihood(self(x))
-                mean_train = dist_train.mean
-                lower_train, upper_train = dist_train.confidence_region()
+                dist = self.likelihood(self(x))
+                mean = dist.mean
+                lower, upper = dist_train.confidence_region()
 
                 return mean_train, lower_train, upper_train
         
         elif isinstance(likelihood, gpytorch.likelihoods.BetaLikelihood):
-            with torch.no_grad(), gpytorch.settings.fast_pred_var(), gpytorch.settings.num_likelihood_samples(40):
-                dist_train = self.likelihood(self(x))
-                modes_train = self.likelihood.mode()
-                mean_train = modes_train.mean(axis=0)
-                lower_train, upper_train = np.quantile(modes_train, q=[0.05, 0.95], axis=0)
-
-                return mean_train, lower_train, upper_train
-        
+           with torch.no_grad(), gpytorch.settings.fast_pred_var(), gpytorch.settings.num_likelihood_samples(30):
+                
+                dist = self.likelihood(self(x))
+                mode = self.likelihood.mode().mean(axis=0)
+                mean = dist.mean.mean(axis=0)
+                
+                samples = dist.sample(sample_shape=torch.Size([30]))
+                
+                median = samples.median(axis=0).values.mean(axis=0)
+                
+                lower, upper = np.percentile(samples, [2.5, 97.5], axis=0)
+                lower, upper = lower.mean(axis=0), upper.mean(axis=0)
+            
+            return median, lower, upper, mean, mode
+                    
         else:
             raise NotImplementedError('Likelihood not implemented')
 

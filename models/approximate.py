@@ -176,7 +176,7 @@ class ApproximateGPBaseModel(ApproximateGP):
             
             # if loss does not improve by more than 0.1% for 15 iterations, stop training
             if i > 0:
-                if abs(losses[-2] - losses[-1]) < 0.0001:
+                if abs(losses[-2] - losses[-1]) < 1e-6:
                     j += 1
                     if j == 15:
                         print(f'Early stopping at iter {i+1}')

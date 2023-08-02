@@ -10,12 +10,10 @@ from typing import Optional
 class BetaLikelihood_MeanParametrization(gpytorch.likelihoods.BetaLikelihood):
     
     def __init__(self, 
-                 scale, 
-                 scale_lower_bound=10,
-                 scale_upper_bound=100,
-                 correcting_scale=1, 
-                 correcting_scale_lower_bound=0, 
-                 correcting_scale_upper_bound=1,
+                 scale : Optional[torch.Tensor] = 30,
+                 correcting_scale  : Optional[float] = 1,
+                 correcting_scale_lower_bound : Optional[float] = 0.1,
+                 correcting_scale_upper_bound : Optional[float] = 0.9,
                  *args, **kwargs):
         
         super().__init__(*args, **kwargs)
@@ -26,14 +24,10 @@ class BetaLikelihood_MeanParametrization(gpytorch.likelihoods.BetaLikelihood):
         assert 0 <= correcting_scale_upper_bound <= 1, 'upper bound must be in [0, 1]'
         assert correcting_scale_lower_bound < correcting_scale_upper_bound, 'lower bound must be smaller than upper bound'
         
-        # set constraint on scale
-        self.register_constraint("raw_scale", Interval(scale_lower_bound, scale_upper_bound))
-        
+        self.scale = scale        
         self.correcting_scale = Parameter(torch.tensor(correcting_scale, dtype=torch.float64), 
                                             requires_grad=False)
 
-        self.scale_lower_bound = scale_lower_bound
-        self.scale_upper_bound = scale_upper_bound
     
     def forward(self, function_samples, *args, **kwargs):
         

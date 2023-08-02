@@ -3,8 +3,6 @@ import optuna
 from hypertuning.base import GPQuasiPeriodic
 from models import MultitaskGPModel
 
-# TODO maybe not inherit from GPQuasiPeriodic
-
 class MultitaskBetaQPGP(GPQuasiPeriodic):
     """
     Multitask Quasi-Periodic GP hyperparameter optimization.
@@ -14,6 +12,7 @@ class MultitaskBetaQPGP(GPQuasiPeriodic):
         """ 
         Create the model.
         """
+        # TODO set learning configuration
         self.model = MultitaskGPModel(**self.inputs)
         self.model.fit(n_iter=200, lr=0.2, verbose=False)
     
@@ -46,6 +45,8 @@ class MultitaskBetaQPGP(GPQuasiPeriodic):
                 y_te = y_te[~nan_te]
 
             if y_tr.size(0) == 0 or y_te.size(0) == 0:
+                n_skips += 1
+                print(f'Empty tensor error, skip nr.: {n_skips}')
                 continue
             try:
                 self.instantiate_model()
@@ -57,5 +58,6 @@ class MultitaskBetaQPGP(GPQuasiPeriodic):
             pred_dist = self.model.predict(x_te)
             metric = self.metric(pred_dist, y_te)
             self.metrics.append(metric)
+            # TODO add a metric to how many points fall outside the 95% CI
         
         return torch.tensor(self.metrics).mean().item()
