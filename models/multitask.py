@@ -9,8 +9,6 @@ from gpytorch.models import ApproximateGP
 from gpytorch.distributions import MultivariateNormal
 from data.utils import store_gp_module_parameters
 
-# TODO add parameter tracking
-
 class MultitaskGPModel(ApproximateGP):
     def __init__(self,
                  x_train : torch.Tensor,
@@ -98,8 +96,34 @@ class MultitaskGPModel(ApproximateGP):
         
         if use_wandb:
             wandb.finish()
+    
+    def predict_mean(self):
+        return dist.mean.mean(axis=0)
+    
+    def predict_mode(self):
+        return self.likelihood.mode().mean(axis=0)
+    
+    def predict_median(self, samples):
+        return samples.median(axis=0).values.mean(axis=0)
+    
+    def confidence_region(self, samples):
+        # per MC sample
+        lower, upper = np.percentile(samples, [2.5, 97.5], axis=0)
+        # across tasks
+        lower, upper = lower.mean(axis=0), upper.mean(axis=0)
+        return lower, upper
+
         
-    def predict(self, likelihood, x):
+    def predict(self, x, pred_type='median'):
+        """ 
+        Get the predictions for the given x values.
+        The prediction type can be one of: dist, median, mean, mode, all or
+        one can get the posterior predictive distribution.
+
+        Args:
+            likelihood (gpytorch.likelihoods.Likelihood): Likelihood used for the predictions.
+        """
+        assert pred_type in ['dist', 'median', 'mean', 'mode', 'all'], 'pred_type must be one of: dist, median, mean, mode, all'
     
         if isinstance(self.likelihood, gpytorch.likelihoods.MultitaskGaussianLikelihood):
             with torch.no_grad(), gpytorch.settings.fast_pred_var():
@@ -109,21 +133,34 @@ class MultitaskGPModel(ApproximateGP):
 
                 return mean_train, lower_train, upper_train
         
-        elif isinstance(likelihood, gpytorch.likelihoods.BetaLikelihood):
+        elif isinstance(self.likelihood, gpytorch.likelihoods.BetaLikelihood):
            with torch.no_grad(), gpytorch.settings.fast_pred_var(), gpytorch.settings.num_likelihood_samples(30):
                 
                 dist = self.likelihood(self(x))
-                mode = self.likelihood.mode().mean(axis=0)
-                mean = dist.mean.mean(axis=0)
-                
+                if pred_type == 'dist':
+                    return dist
+
                 samples = dist.sample(sample_shape=torch.Size([30]))
+                lower, upper = self.confidence_region(samples)
+
+                if pred_type == 'median':
+                    median = self.predict_median(samples)
+                    return median, lower, upper
                 
-                median = samples.median(axis=0).values.mean(axis=0)
+                elif pred_type == 'mean':
+                    mean = self.predict_mean()
+                    return mean, lower, upper
                 
-                lower, upper = np.percentile(samples, [2.5, 97.5], axis=0)
-                lower, upper = lower.mean(axis=0), upper.mean(axis=0)
-            
-            return median, lower, upper, mean, mode
+                elif pred_type == 'mode':
+                    mode = self.predict_mode()
+                    return mode, lower, upper
+             
+                else:
+                    median = self.predict_median(samples)
+                    mean = self.predict_mean()
+                    mode = self.predict_mode()
+                    
+                    return median, mean, mode, lower, upper
                     
         else:
             raise NotImplementedError('Likelihood not implemented')
