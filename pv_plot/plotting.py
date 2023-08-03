@@ -101,6 +101,59 @@ def plot_train_test_split(y_train, y_test):
     plt.legend()
     plt.show();
 
+def plot_seasons(train_loader_sp : torch.utils.data.DataLoader,
+                 test_loader_sp : torch.utils.data.DataLoader,
+                 train_loader_su : torch.utils.data.DataLoader,
+                 test_loader_su : torch.utils.data.DataLoader,
+                 train_loader_f : torch.utils.data.DataLoader,
+                 test_loader_f : torch.utils.data.DataLoader,
+                 train_loader_w : torch.utils.data.DataLoader,
+                 test_loader_w : torch.utils.data.DataLoader):
+    """
+    Plot the PV output for each season in a 2x2 grid.
+
+    Args:
+        train_loader_sp (torch.utils.data.DataLoader): train loader for spring
+        test_loader_sp (torch.utils.data.DataLoader): test loader for spring
+        train_loader_su (torch.utils.data.DataLoader): train loader for summer
+        test_loader_su (torch.utils.data.DataLoader): test loader for summer
+        train_loader_f (torch.utils.data.DataLoader): train loader for fall
+        test_loader_f (torch.utils.data.DataLoader): test loader for fall
+        train_loader_w (torch.utils.data.DataLoader): train loader for winter
+        test_loader_w (torch.utils.data.DataLoader): test loader for winter
+    """
+
+    plt.rcParams['font.family'] = 'Arial'
+
+    fig, ax = plt.subplots(2, 2, figsize=(40, 20), sharex=True, sharey=True)
+    
+    ax[0][0].set_ylabel('PV Output (0-1 Scale)', fontsize=20)
+    ax[1][0].set_ylabel('PV Output (0-1 Scale)', fontsize=20)
+    
+    ax = ax.flatten()
+    seasons = ['Spring', 'Summer', 'Fall', 'Winter']
+
+    alpha = 0.1
+
+    for i, (train_loader, test_loader) in enumerate([(train_loader_sp, test_loader_sp), 
+                                    (train_loader_su, test_loader_su),
+                                    (train_loader_f, test_loader_f),
+                                    (train_loader_w, test_loader_w)]):
+        season = seasons[i]
+        for (x_tr, y_tr), (x_te, y_te) in zip(train_loader, test_loader):
+            for j in range(y_tr.shape[1]):
+                # time indices for train and test are seperate for each sample
+                t_train = torch.arange(y_tr.shape[0])
+                t_test = torch.arange(y_tr.shape[0], y_te.shape[0] + y_tr.shape[0])
+                
+                ax[i].plot(t_train, y_tr[:,j], color='blue', alpha=alpha)
+                ax[i].plot(t_test, y_te[:,j], color='red', alpha=alpha)
+
+        ax[i].set_title(season, fontsize=20)
+    
+    plt.tight_layout()
+    plt.show()
+
 
 def mode_beta_dist(alpha, beta):
     """ 
@@ -130,6 +183,7 @@ def mode_beta_dist(alpha, beta):
 
 # TODO: add ax option and legend option
 # ax vs. plot should just be if ax is None plt.plot otherwise ax.plot
+# TODO update the approximate predictions to work with model.predict(x) call
 
 def plot_gp(model : gpytorch.models.GP,
             x_train : torch.Tensor,
@@ -184,6 +238,7 @@ def plot_gp(model : gpytorch.models.GP,
             lower, upper = preds_test.confidence_region()
             plt.fill_between(time_test, lower, upper, color='b', alpha=0.1)
     
+    # TODO fix this to work with prediction call on the approximate gp models
     def plot_approximate_predictions():
         """ 
         Plots the mean and confidence intervals of the mean and

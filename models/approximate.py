@@ -1,5 +1,6 @@
 import gpytorch
 import torch
+import numpy as np
 from gpytorch.models import ApproximateGP
 from gpytorch.variational import VariationalStrategy
 from gpytorch.distributions import MultivariateNormal
@@ -188,28 +189,116 @@ class ApproximateGPBaseModel(ApproximateGP):
         if use_wandb:
             wandb.finish()
     
-    def predict(self, X : torch.Tensor):
+    def predict_mean(self, samples):
+        """ 
+        Mean predictions with the GP model
+
+        Args:
+            sanples (torch.Tensor): MC samples from the posterior distribution
+
+        Returns:
+            torch.Tensor: posterior mean
+        """
+        return samples.mean(axis=0)
+    
+    def predict_median(self, samples):
+        """ 
+        Median predictions with the GP model
+
+        Args:
+            samples (torch.Tensor): MC samples from the posterior distribution
+
+        Returns:
+            torch.Tensor: posterior median from MC samples
+        """
+        return samples.median(axis=0).values
+
+    def predict_mode(self):
+        """ 
+        Mode predictions with the GP model.
+        Uses the mode from the posterior:
+
+        \frac{\alpha-1}{\alpha+\beta-2} for α, β > 1
+        any value in (0,1) for α, β = 1
+        {0, 1} (bimodal) for α, β < 1
+        0 for α ≤ 1, β > 1
+        1 for α > 1, β ≤ 1
+        
+        Returns:
+            mode (torch.Tensor): posterior mode
+        """
+        return self.likelihood.mode().mean(axis=0)
+    
+    def confidence_region(self, samples):
+        """ 
+        Get the 95% confidence region for the GP model
+
+        Args:
+            samples (torch.Tensor): MC samples from the posterior distribution
+
+        Returns:
+            torch.Tensor: lower and upper bounds of the 95% confidence region
+        """
+        lower, upper = np.percentile(samples, [2.5, 97.5], axis=0)
+        return lower, upper
+    
+    def predict(self, x : torch.Tensor, pred_type='dist'):
         """ 
         Make predictions with the GP model
 
         Args:
             X (torch.Tensor): test data
-            device (torch.device): device to make predictions on
-
+            pred_type (str, optional): prediction type. Defaults to 'dist'.
         Returns:
             preds (gpytorch.distributions.Distribution): marginalized posterior predictive distribution
             Uses MC sampling for non-Gaussian likelihoods
+
+            Or 
+            (pred_type, lower, upper) (torch.Tensor, torch.Tensor, torch.Tensor) 
+            if pred_type is 'median', 'mean', 'mode' 
+
+            Or
+            (median, mean, mode, lower, upper) (torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor)
+            if pred_type is 'all'
+
         """
+        assert pred_type in ['dist', 'median', 'mean', 'mode', 'all'], 'pred_type must be one of: dist, median, mean, mode, all'
         self.eval()
         self.likelihood.eval()
         
         with torch.no_grad():
+            
             # MC samples for non-Gaussian likelihoods
             if not isinstance(self.likelihood, gpytorch.likelihoods.GaussianLikelihood):
                 with gpytorch.settings.num_likelihood_samples(30):
-                    preds = self.likelihood(self(X)) 
+                    # get posterior predictive distribution
+                    preds = self.likelihood(self(x)) 
+                    
+                    if pred_type == 'dist':
+                        return preds
+                    # samples from the posterior predictive distribution
+                    samples = preds.sample(sample_shape=torch.Size([30]))
+                    lower, upper = self.confidence_region(samples)
+
+                    if pred_type == 'median':
+                        median = self.predict_median(samples)
+                        return median, lower, upper
+                    
+                    elif pred_type == 'mean':
+                        mean = self.predict_mean(samples)
+                        return mean, lower, upper
+                    
+                    elif pred_type == 'mode':
+                        mode = self.predict_mode()
+                        return mode, lower, upper
+                    
+                    else:
+                        median = self.predict_median(samples)
+                        mean = self.predict_mean(samples)
+                        mode = self.predict_mode()
+                        return median, mean, mode, lower, upper
+
             # Closed form for Gaussian likelihoods
             else:
-                preds = self.likelihood(self(X))
+                return self.likelihood(self(x))
             
-        return preds

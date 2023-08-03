@@ -1,1 +1,1 @@
-from .plotting import plot_gp, plot_train_test_split, plot_grid
+from .plotting import plot_gp, plot_train_test_split, plot_grid, plot_seasons

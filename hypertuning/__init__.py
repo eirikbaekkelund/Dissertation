@@ -1,2 +1,2 @@
-from .beta_multitask import MultitaskBetaQPGP
-from .beta_one_dim import BetaQPGPOneDim
+from .multitask import MultitaskBetaQPGP
+from .approximate import BetaQPGPOneDim

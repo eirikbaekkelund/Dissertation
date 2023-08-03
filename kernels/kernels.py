@@ -62,6 +62,7 @@ class Kernel:
         """
         Returns a combined Periodic kernel with the specified constraints and priors
         """
+        
         if periodic2 is not None:
             periodic_kernel = ProductKernel(periodic1, periodic2)
 

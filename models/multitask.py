@@ -11,31 +11,32 @@ from data.utils import store_gp_module_parameters
 
 class MultitaskGPModel(ApproximateGP):
     def __init__(self,
-                 x_train : torch.Tensor,
-                 y_train : torch.Tensor,
+                 X : torch.Tensor,
+                 y : torch.Tensor,
                  likelihood : gpytorch.likelihoods.Likelihood = None,
                  mean_module : gpytorch.means.Mean = None,
                  covar_module : gpytorch.kernels.Kernel = None,
                  num_latents : int = 1,
+                 learn_inducing_locations : bool = False,
                  jitter : float = 1e-4):
         # check that num_latents is consistent with the batch_shape of the mean and covar modules
         assert num_latents == mean_module.batch_shape[0], 'num_latents must be equal to the batch_shape of the mean module'
         assert num_latents == covar_module.batch_shape[0], 'num_latents must be equal to the batch_shape of the covar module'
 
-        num_tasks = y_train.size(-1)
+        num_tasks = y.size(-1)
         
         # MeanField constructs a variational distribution for each output dimension
         variational_distribution = MeanFieldVariationalDistribution(
-            x_train.size(0), batch_shape=torch.Size([num_latents]),jitter=jitter
+            X.size(0), batch_shape=torch.Size([num_latents]),jitter=jitter
         )
         
         # LMC constructs MultitaskMultivariateNormal from the base var dist
         variational_strategy = LMCVariationalStrategy(
                             VariationalStrategy(
                                     model=self, 
-                                    inducing_points=x_train, 
+                                    inducing_points=X, 
                                     variational_distribution=variational_distribution, 
-                                    learn_inducing_locations=False, 
+                                    learn_inducing_locations=learn_inducing_locations,
                                     jitter_val=jitter
                                 ),
                             num_tasks=num_tasks,
@@ -48,8 +49,8 @@ class MultitaskGPModel(ApproximateGP):
         self.mean_module = mean_module
         self.covar_module =  covar_module
         self.likelihood = likelihood
-        self.x_train = x_train
-        self.y_train = y_train
+        self.X = X
+        self.y = y
         
     def forward(self, x):
     
@@ -73,7 +74,7 @@ class MultitaskGPModel(ApproximateGP):
                 config={'learning_rate': lr, 'epochs': n_iter}
             )
         
-        mll = gpytorch.mlls.VariationalELBO(self.likelihood, self, num_data=self.y_train.size(0))
+        mll = gpytorch.mlls.VariationalELBO(self.likelihood, self, num_data=self.y.size(0))
         optim = torch.optim.Adam(self.parameters(), lr=lr)
         
         print_freq = n_iter // 10
@@ -81,8 +82,8 @@ class MultitaskGPModel(ApproximateGP):
         for i in range(n_iter):
             
             optim.zero_grad()
-            output = self(self.x_train)
-            loss = -mll(output, self.y_train)
+            output = self(self.X)
+            loss = -mll(output, self.y)
             loss.backward()
             optim.step()
             
@@ -97,7 +98,7 @@ class MultitaskGPModel(ApproximateGP):
         if use_wandb:
             wandb.finish()
     
-    def predict_mean(self):
+    def predict_mean(self, dist):
         return dist.mean.mean(axis=0)
     
     def predict_mode(self):
@@ -113,15 +114,23 @@ class MultitaskGPModel(ApproximateGP):
         lower, upper = lower.mean(axis=0), upper.mean(axis=0)
         return lower, upper
 
-        
-    def predict(self, x, pred_type='median'):
+    def predict(self, x, pred_type='dist'):
         """ 
         Get the predictions for the given x values.
         The prediction type can be one of: dist, median, mean, mode, all or
         one can get the posterior predictive distribution.
 
         Args:
-            likelihood (gpytorch.likelihoods.Likelihood): Likelihood used for the predictions.
+            x (torch.Tensor): input tensor
+            pred_type (str, optional): prediction type. Defaults to 'median'.
+        
+        Returns:
+            dist (torch.distributions.Distribution) if pred_type is 'dist': the posterior predictive distribution
+            (pred, lower, upper) (torch.Tensor, torch.Tensor, torch.Tensor) if pred_type is 'median', 'mean', 'mode'
+            
+            where pred is the prediction of the given type and lower, upper 
+            is the 95% confidence interval from MC sampling from the predictive distribution.
+    
         """
         assert pred_type in ['dist', 'median', 'mean', 'mode', 'all'], 'pred_type must be one of: dist, median, mean, mode, all'
     
@@ -129,9 +138,9 @@ class MultitaskGPModel(ApproximateGP):
             with torch.no_grad(), gpytorch.settings.fast_pred_var():
                 dist = self.likelihood(self(x))
                 mean = dist.mean
-                lower, upper = dist_train.confidence_region()
+                lower, upper = dist.confidence_region()
 
-                return mean_train, lower_train, upper_train
+                return mean, lower, upper
         
         elif isinstance(self.likelihood, gpytorch.likelihoods.BetaLikelihood):
            with torch.no_grad(), gpytorch.settings.fast_pred_var(), gpytorch.settings.num_likelihood_samples(30):

@@ -100,7 +100,7 @@ class GPQuasiPeriodic(HyperOptBase):
         """
         Sample the parameters of the quasi-periodic kernel.
         """
-        kernel = Kernel()
+        kernel = Kernel(self.num_latents)
         # TODO  maybe add constraints to the parameters of the kernel
         matern_base = kernel.get_matern(lengthscale_constraint=Positive(),
                                 outputscale_constraint=Positive())
@@ -140,12 +140,10 @@ class GPQuasiPeriodic(HyperOptBase):
         """
         self.inputs['likelihood'] = self.get_likelihood(trial)
         self.inputs['mean_module'] = self.get_mean(trial)
+        self.inputs['covar_module'] = self.get_quasi_periodic()
         self.train_config = self.sample_train_config(trial)
 
     def metric(self, y_dist, target):
-        """ 
-        Compute the metric of interest.
-        """
         return nlpd(y_dist, target).median().item()
 
     @abstractmethod    
