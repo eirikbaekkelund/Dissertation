@@ -68,6 +68,8 @@ class MultitaskGPModel(ApproximateGP):
         self.train()
         self.likelihood.train()
 
+        losses = []
+
         if use_wandb:
             wandb.init(
                 project ='dissertation',
@@ -86,6 +88,8 @@ class MultitaskGPModel(ApproximateGP):
             loss = -mll(output, self.y)
             loss.backward()
             optim.step()
+
+            losses.append(loss.item())
             
             if verbose and (i+1) % print_freq == 0:
                 print(f'Iter {i+1}/{n_iter} - Loss: {loss.item()}')
@@ -94,6 +98,16 @@ class MultitaskGPModel(ApproximateGP):
                 log_dict = store_gp_module_parameters(self)
                 log_dict['loss'] = loss.item()
                 wandb.log(log_dict)
+            
+            # if loss is not decreasing for 15 iterations, stop training
+            if i > 0:
+                if abs(losses[-2] - losses[-1]) < 1e-6:
+                    j += 1
+                    if j == 15:
+                        print(f'Early stopping at iter {i+1}')
+                        break
+                else:
+                    j = 0
         
         if use_wandb:
             wandb.finish()

@@ -159,6 +159,8 @@ class ApproximateGPBaseModel(ApproximateGP):
             loss = -elbo(output, self.y)
             loss.backward()
             
+            losses.append(loss.item())
+            
             if natural_grad:
                 variational_ngd_optimizer.step()
                 hyperparameter_optimizer.step()
@@ -171,9 +173,7 @@ class ApproximateGPBaseModel(ApproximateGP):
                 wandb.log(log_dict)
             
             if verbose and (i+1) % print_freq == 0:
-                print(f'Iter {i+1}/{n_iter} - Loss: {loss.item():.3f}')
-            
-            losses.append(loss.item())
+                print(f'Iter {i+1}/{n_iter} - Loss: {loss.item():.3f}')  
             
             # if loss does not improve by more than 0.1% for 15 iterations, stop training
             if i > 0:
@@ -184,7 +184,6 @@ class ApproximateGPBaseModel(ApproximateGP):
                         break
                 else:
                     j = 0
-
         
         if use_wandb:
             wandb.finish()

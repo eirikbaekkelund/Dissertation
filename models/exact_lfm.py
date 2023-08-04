@@ -1,13 +1,11 @@
 import torch
 import gpytorch
-import numpy as np
 from gpytorch.distributions import MultivariateNormal
 from alfi.models.lfm import LFM
 from alfi.means import SIMMean
 from kernels.sim import SIMKernel
 from alfi.datasets import LFMDataset
 from alfi.utilities.data import flatten_dataset
-
 
 class ExactLFM(LFM, gpytorch.models.ExactGP):
     """
@@ -22,8 +20,8 @@ class ExactLFM(LFM, gpytorch.models.ExactGP):
      
         self.train_t = train_t
         self.train_y = train_y
-       # TODO consider if variance should have a gradient
-        self.covar_module = SIMKernel(self.num_outputs, torch.tensor(variance, requires_grad=False))
+
+        self.covar_module = SIMKernel(self.num_outputs, torch.tensor(variance, requires_grad=True))
         initial_basal = torch.mean(train_y.view(self.num_outputs, -1), dim=1) * self.covar_module.decay
         self.mean_module = SIMMean(self.covar_module, self.num_outputs, initial_basal)
 
@@ -76,9 +74,7 @@ class ExactLFM(LFM, gpytorch.models.ExactGP):
         
         mean = KxstarxKinvY.view(self.num_outputs, pred_t.shape[0])
         mean = mean.transpose(0, 1)
-        
-
-
+    
         return MultivariateNormal(mean, var)
 
     def predict_f(self, pred_t, jitter=1e-5) -> MultivariateNormal:
@@ -102,7 +98,7 @@ class ExactLFM(LFM, gpytorch.models.ExactGP):
         #Kff-KfxKxxKxf
         Kff = self.covar_module.K_ff(pred_t, pred_t)  # (100, 500)
         var = Kff - torch.matmul(KfxKxx, Kxf)
-        # var = torch.diagonal(var, dim1=0, dim2=1).view(-1)
+
         var = var.unsqueeze(0)
         # For some reason a full covariance is not PSD, for now just take the variance: (TODO)
         var = torch.diagonal(var, dim1=1, dim2=2)

@@ -57,7 +57,7 @@ class TranscriptomicTimeSeries(LFMDataset, ABC):
 class PV_LFM_Dataset(TranscriptomicTimeSeries):
     """ 
     Construct a dataset for the LFM model using data 
-    from the PVDataLoader class.
+    from the PVDataGenerator.
 
     Args:
         num_outputs (int): number of PV systems
