@@ -1,6 +1,8 @@
+import torch
 from torch.utils.data import Dataset
 from data.generator import PVWeatherGenerator
 from typing import Optional
+from data.utils import get_lat_lon_col_names
 
 
 class PVDataLoader(Dataset):
@@ -40,7 +42,11 @@ class PVWeatherLoader(PVWeatherGenerator, Dataset):
                  file_name : str = 'pv_and_weather.csv',
                  distance_method : str = 'circle',
                  season : Optional[str] = None,
-                 drop_nan : bool = True
+                 drop_nan : bool = True,
+                 x_cols : Optional[list] =['global_rad:W', 'diffuse_rad:W',
+                                                    'effective_cloud_cover:octas',
+                                                    'relative_humidity_2m:p', 't_2m:C'],
+                 y_col : Optional[str] ='PV'
                 ):
         
         super().__init__(coords=coords, 
@@ -55,24 +61,30 @@ class PVWeatherLoader(PVWeatherGenerator, Dataset):
                          file_name=file_name,
                          distance_method=distance_method,
                          season=season,
-                         drop_nan=drop_nan
+                         drop_nan=drop_nan,
+                         
                         )
         
         # create list of all X and y values for each system based on lat lon pairs
-        self.create_X_y()
+        self.create_X_y(x_cols=x_cols, y_col=y_col)
 
-    def create_X_y(self, 
-                    x_cols : list =['global_rad:W', 'diffuse_rad:W', 
-                                    'effective_cloud_cover:octas', 
-                                    'relative_humidity_2m:p', 't_2m:C'],
-                    y_col : str ='PV'):
+    def create_X_y(self, x_cols : list, y_col : str):
+        """
+        Create list of all X and y values for each system based on lat lon pairs
+
+        Args:
+            x_cols (list): list of column names to use as X
+            y_col (str): column name to use as y
+        """
         
         X = []
         y = []
         
+        lat_col, lon_col = get_lat_lon_col_names(self.df)
+        
         for i in range(len(self.unique_lat_lon)):
             lat, lon = self.unique_lat_lon.iloc[i]
-            df = self.df[(self.df['latitude'] == lat) & (self.df['longitude'] == lon)]
+            df = self.df[(self.df[lat_col] == lat) & (self.df[lon_col] == lon)]
             X.append(df[x_cols].values)
             y.append(df[y_col].values)
         
@@ -80,8 +92,14 @@ class PVWeatherLoader(PVWeatherGenerator, Dataset):
         self.y = y
 
     def __getitem__(self, index):
-        return (self.X[index][self.start_idx:self.end_idx], 
-                self.y[index][self.start_idx:self.end_idx])
+        
+        _X = self.X[index][self.start_idx:self.end_idx]
+        X = torch.tensor(_X, dtype=torch.float32)
+
+        _y = self.y[index][self.start_idx:self.end_idx]
+        y = torch.tensor(_y, dtype=torch.float32)
+        
+        return X, y
     
     def __len__(self):
         return len(self.X)

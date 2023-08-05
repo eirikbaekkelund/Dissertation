@@ -311,13 +311,16 @@ def find_nearby_systems_poly(df_location, c1, c2, c3, c4):
 
     for _, row in unique_coords.iterrows():
         lat, lon = row[lat_col], row[lon_col]
-        df = df_location[(df_location['latitude'] == lat) & (df_location['longitude'] == lon)]
         
-        df_list.append(df)
+        if polygon.contains(Point(lat, lon)):
+            print(f'Found system at ({lat}, {lon})')
+            df = df_location[(df_location[lat_col] == lat) & (df_location[lon_col] == lon)]
+            df_list.append(df)
 
     nearby_systems = pd.concat(df_list)
 
     return nearby_systems
+
 def stack_dataframe(df_pv, lats_map, longs_map):
     """
     Stacking data frame to include geospatial data
@@ -493,7 +496,7 @@ def start_end_index(day_min, day_max, minute_interval, n_days, day_init):
     n_points= int(n_daily_points * n_days)
     
     start_idx = int(n_daily_points * day_init)
-    end_idx = int(day_init + n_points)
+    end_idx = int(start_idx + n_points)
 
     return start_idx, end_idx
 

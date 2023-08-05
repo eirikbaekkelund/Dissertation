@@ -70,7 +70,7 @@ def plot_grid(df, coords, radius=1, distance_method='circle'):
 
     plt.show()
 
-def plot_train_test_split(y_train, y_test):
+def plot_train_test_split(y_train, y_test, minute_interval=5):
     """ 
     Plot the train-test split of the data
 
@@ -99,7 +99,7 @@ def plot_train_test_split(y_train, y_test):
                 color='black', 
                 linestyle='--')
 
-    plt.xlabel('Time (5 min intervals between 8am and 4pm)', fontsize=13)
+    plt.xlabel(f'Time ({minute_interval} min intervals between 8am and 4pm)', fontsize=13)
     plt.ylabel('PV Production (0-1 Scale)', fontsize=13)
 
     plt.ylim(-0.01, 1.001)
@@ -215,7 +215,7 @@ def plot_gp(model : gpytorch.models.GP,
     # time points for the training and test data
     time_train = torch.arange(0, len(y_train))
     time_test = torch.arange(len(y_train), len(y_train) + len(y_test))
-    
+    plt.rcParams['font.family'] = 'Arial'
     plt.figure(figsize=(20, 8))
 
     def plot_observed_data():
@@ -471,7 +471,9 @@ def plot_gp_ax(model, x_train, x_test, y_train, y_test, pred_type='mode', title=
 
 
 def plot_alpha_beta(model):
+    
     fig, ax = plt.subplots(figsize=(15, 6), sharey=False)
+    plt.rcParams['font.family'] = 'Arial'
     time = torch.arange(0, len(model.likelihood.alpha.mean(axis=0)))
 
     ax.scatter(time, model.likelihood.beta.mean(axis=0), label='Beta', color='b', alpha=0.2)

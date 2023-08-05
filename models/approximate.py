@@ -40,7 +40,14 @@ class ApproximateGPBaseModel(ApproximateGP):
             assert y.min() >= 0 and y.max() <= 1, 'y must be in the range [0, 1] for Beta likelihood'
         assert X.size(0) == y.size(0), 'X and y must have same number of data points'
         
-        
+        # avoids numerical issues with Cholesky decomposition
+        # can result in all NaNs at first iteration
+        if y.min() == 0:
+            y[y == 0] += 1e-10
+
+        if y.max() == 1:
+            y[y==0] -= 1e-10
+
         self.X = X
         self.y = y
         self.config = config
