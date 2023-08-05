@@ -2,6 +2,5 @@ torch = 2.0.0
 gpytorch = 1.9.1
 numpy = 1.19.5
 statsmodels = 0.12.2
-huggingface-hub = 0.13.4
 torchdiffeq = 0.2.0
-
+alfi = 1.0.0
