@@ -27,8 +27,10 @@ class MultitaskGPModel(ApproximateGP):
         
         # MeanField constructs a variational distribution for each output dimension
         variational_distribution = MeanFieldVariationalDistribution(
-            X.size(0), batch_shape=torch.Size([num_latents]),jitter=jitter
-        )
+                                    num_inducing_points=X.size(0), 
+                                    batch_shape=torch.Size([num_latents]),
+                                    jitter=jitter
+                                )
         
         # LMC constructs MultitaskMultivariateNormal from the base var dist
         variational_strategy = LMCVariationalStrategy(
@@ -37,7 +39,7 @@ class MultitaskGPModel(ApproximateGP):
                                     inducing_points=X, 
                                     variational_distribution=variational_distribution, 
                                     learn_inducing_locations=learn_inducing_locations,
-                                    jitter_val=jitter
+                                   # jitter_val=jitter
                                 ),
                             num_tasks=num_tasks,
                             num_latents=num_latents,
@@ -111,6 +113,9 @@ class MultitaskGPModel(ApproximateGP):
         
         if use_wandb:
             wandb.finish()
+    
+    def get_inducing_points(self):
+        return self.variational_strategy.base_variational_strategy.inducing_points
     
     def predict_mean(self, dist):
         return dist.mean.mean(axis=0)

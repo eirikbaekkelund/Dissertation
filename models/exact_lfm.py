@@ -3,7 +3,7 @@ import gpytorch
 from gpytorch.distributions import MultivariateNormal
 from alfi.models.lfm import LFM
 from alfi.means import SIMMean
-from kernels.sim import SIMKernel
+from kernels import SIMKernel
 from alfi.datasets import LFMDataset
 from alfi.utilities.data import flatten_dataset
 

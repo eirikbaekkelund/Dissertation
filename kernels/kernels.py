@@ -6,6 +6,7 @@ from gpytorch.kernels import (MaternKernel,
                               AdditiveKernel, 
                               ProductKernel)
 from gpytorch.priors import Prior
+from gpytorch.constraints import Positive
 from typing import Optional
 
 class Kernel:
@@ -20,8 +21,8 @@ class Kernel:
         self.num_latent = num_latent
 
     def get_matern(self,
-                   lengthscale_constraint : Optional[gpytorch.constraints] = None,
-                   outputscale_constraint : Optional[gpytorch.constraints] = None,
+                   lengthscale_constraint : Optional[Positive] = None,
+                   outputscale_constraint : Optional[Positive] = None,
                    lengthscale_prior: Optional[Prior] = None,
                    outputscale_prior: Optional[Prior] = None,
                    nu: float = 3/2,):
@@ -36,9 +37,9 @@ class Kernel:
                             outputscale_prior=outputscale_prior)
 
     def get_periodic(self,
-                    lengthscale_constraint : Optional[gpytorch.constraints] = None,
-                    outputscale_constraint : Optional[gpytorch.constraints] = None,
-                    periodic_constraint : Optional[gpytorch.constraints] = None,
+                    lengthscale_constraint : Optional[Positive] = None,
+                    outputscale_constraint : Optional[Positive] = None,
+                    periodic_constraint : Optional[Positive] = None,
                     lengthscale_prior: Optional[Prior] = None,
                     outputscale_prior: Optional[Prior] = None,
                     period_prior: Optional[Prior] = None):
@@ -70,4 +71,8 @@ class Kernel:
             periodic_kernel = periodic1
         
         product = ProductKernel(periodic_kernel, matern_quasi)
-        return AdditiveKernel(product, matern_base)
+        quasi_periodic = AdditiveKernel(product, matern_base)
+        
+        quasi_periodic.batch_shape = torch.Size([self.num_latent])
+
+        return quasi_periodic

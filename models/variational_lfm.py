@@ -34,7 +34,7 @@ class VariationalLFM(LFM, ABC):
         
         self.gp_model = gp_model
         self.num_outputs = num_outputs
-        self.likelihood = MultitaskGaussianLikelihood(num_tasks=self.num_outputs)
+        self.likelihood = gp_model.likelihood
         self.pretrain_mode = False
         
         try:

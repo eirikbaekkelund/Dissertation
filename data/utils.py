@@ -35,7 +35,7 @@ def load_data(folder_name, file_name):
     # check that file is in the remote path
     except IndexError:
         remote_path += f'/{folder_name}'
-
+    
     assert file_name in os.listdir(remote_path)
     
     file_path = os.path.join(remote_path, file_name)
@@ -197,8 +197,8 @@ def get_location_maps(df_location, n_systems):
         lats_map (dict): latitude map
         long_map (dict): longitude map
     """
-    lats = dict(df_location.iloc[:n_systems]['latitude_noisy'])
-    longs = dict(df_location.iloc[:n_systems]['longitude_noisy'])
+    lats = dict(df_location.iloc[:n_systems]['latitude_rounded'])
+    longs = dict(df_location.iloc[:n_systems]['longitude_rounded'])
 
     return lats, longs
 
@@ -240,6 +240,24 @@ def save_csv(df, folder_name, file_name):
     
     df.to_csv(os.path.join(remote_path, file_name))
 
+def get_lat_lon_col_names(df):
+    if 'latitude_rounded' in df.columns and 'longitude_rounded' in df.columns:
+        lat_col = 'latitude_rounded'
+        lon_col = 'longitude_rounded'
+    elif 'latitude' in df.columns and 'longitude' in df.columns:
+        lat_col = 'latitude'
+        lon_col = 'longitude'
+    elif 'lat' in df.columns and 'lon' in df.columns:
+        lat_col = 'lat'
+        lon_col = 'lon'
+    elif 'latitude_noisy' in df.columns and 'longitude_noisy' in df.columns:
+        lat_col = 'latitude_noisy'
+        lon_col = 'longitude_noisy'
+    else:
+        raise ValueError('Latitude and longitude columns not found')
+    
+    return lat_col, lon_col
+
 def find_nearby_systems_circle(df_location, lat, lon, radius):
     """
     Find nearby systems by latitude and longitude in a circular area 
@@ -254,8 +272,11 @@ def find_nearby_systems_circle(df_location, lat, lon, radius):
     Returns:
         nearby_systems (pd.DataFrame): nearby systems
     """
-    # get latitude and longitude of nearby systems
-    nearby_systems = df_location[(df_location['latitude_noisy'] - lat)**2 + (df_location['longitude_noisy'] - lon)**2 < radius**2]
+    # different type of namings across data files for lat and lon
+    
+    lat_col, lon_col = get_lat_lon_col_names(df_location)
+        
+    nearby_systems = df_location[(df_location[lat_col] - lat)**2 + (df_location[lon_col] - lon)**2 < radius**2]
     return nearby_systems
 
 def find_nearby_systems_poly(df_location, c1, c2, c3, c4):
@@ -283,18 +304,20 @@ def find_nearby_systems_poly(df_location, c1, c2, c3, c4):
     # Create a polygon from the four corner coordinates
     polygon = Polygon([c1, c2, c4, c3])
 
-    # Create a list to store the points (latitude, longitude)
-    points = []
-    for _, row in df_location.iterrows():
-        latitude = row['latitude_noisy']
-        longitude = row['longitude_noisy']
-        points.append(Point(latitude, longitude))
+    lat_col, lon_col = get_lat_lon_col_names(df_location)
+    unique_coords = df_location[[lat_col, lon_col]].drop_duplicates()
+    
+    df_list = []
 
-    # Filter systems that are inside the polygon
-    nearby_systems = df_location[[polygon.contains(point) for point in points]]
+    for _, row in unique_coords.iterrows():
+        lat, lon = row[lat_col], row[lon_col]
+        df = df_location[(df_location['latitude'] == lat) & (df_location['longitude'] == lon)]
+        
+        df_list.append(df)
+
+    nearby_systems = pd.concat(df_list)
 
     return nearby_systems
-
 def stack_dataframe(df_pv, lats_map, longs_map):
     """
     Stacking data frame to include geospatial data
@@ -436,7 +459,7 @@ def get_daily_points(day_min, day_max, minute_interval):
     Returns:
         daily_points (int): number of data points per day
     """
-    return ((day_max - day_min)) * 60 // minute_interval
+    return int(((day_max - day_min)) * 60 // minute_interval)
 
 def get_hourly_points(day_min, day_max, minute_interval):
     """ 
@@ -451,6 +474,28 @@ def get_hourly_points(day_min, day_max, minute_interval):
         hourly_points (int): number of data points per hour
     """
     return get_daily_points(day_min, day_max, minute_interval) // (day_max - day_min)
+
+def start_end_index(day_min, day_max, minute_interval, n_days, day_init):
+    """ 
+    Get the index of the first data point and the index of the last data point
+
+    Args:
+        day_min (int): minimum hour of the day
+        day_max (int): maximum hour of the day
+        minute_interval (int): interval between data points in minutes
+        n_days (int): number of days to consider
+    
+    Returns:
+        start_index (int): index of the first data point
+        end_index (int): index of the last data point
+    """
+    n_daily_points = get_daily_points(day_min, day_max, minute_interval)
+    n_points= int(n_daily_points * n_days)
+    
+    start_idx = int(n_daily_points * day_init)
+    end_idx = int(day_init + n_points)
+
+    return start_idx, end_idx
 
 def prediction_index(hour, hourly_points, day_max, n_hours):
     """ 
@@ -470,6 +515,34 @@ def prediction_index(hour, hourly_points, day_max, n_hours):
     start_index = end_index + n_hours * hourly_points
 
     return int(start_index), int(end_index)
+
+def get_season(month):
+    if month in [12, 1, 2]:
+        return 'winter'
+    elif month in [3, 4, 5]:
+        return 'spring'
+    elif month in [6, 7, 8]:
+        return 'summer'
+    else:
+        return 'fall'
+
+def assign_month_and_season(df):
+    try:
+        df['month'] = df['datetime'].dt.month
+    except AttributeError:
+        df['datetime'] = pd.to_datetime(df['datetime'])
+        df['month'] = df['datetime'].dt.month
+    
+    df['season'] = df['month'].apply(get_season)
+    df.drop('month', axis=1, inplace=True)
+    return df
+
+def filter_by_season(df, season):
+    assert 'datetime' in df.columns, 'datetime column not found'
+    df = assign_month_and_season(df)
+    df = df[df['season'] == season]
+    df.drop('season', axis=1, inplace=True)
+    return df
 
 def train_test_split(X, y, hour, minute_interval=5, day_min=8, day_max=16, n_hours=2):
     """ 
@@ -631,3 +704,92 @@ def store_gp_module_parameters(model, n_digits=4, verbose=False):
             param_dict[param_name] = param.numpy().round(n_digits)
             
     return param_dict
+
+# THESE ARE HARD CODED FOR LOCAL MACHINE TO UPLOAD AND SAVE FILES
+# WOULD NEED TO CHANGE FOR REMOTE / DIFFERENT MACHINE
+
+def preprocess_weather(df):
+    """ 
+    Scales the weather data and extracts the relevant time interval.
+    Keeps only neccessary columns.
+
+    Args:
+        df (pd.DataFrame): weather data
+    
+    Returns:
+        df (pd.DataFrame): preprocessed weather data
+    """
+     # Convert the column to datetime format
+    df["validdate"] = pd.to_datetime(df["validdate"])
+    df['datetime'] = df['validdate'].dt.strftime('%Y-%m-%d %H:%M:%S')
+
+    # Extract the date and time components into separate columns
+    df["time"] = df["validdate"].dt.strftime("%H:%M")
+    # keep only values where time is between 08:00 and 16:00
+    df = df[(df['time'] >= '08:00') & (df['time'] <= '15:00')]
+    df = df.drop(columns=['validdate', 'time'], axis=1)
+
+    # make diffuse_rad:W to be between 0 and 1
+    df['global_rad:W'] = df['global_rad:W'] / df['global_rad:W'].max()
+    df['diffuse_rad:W'] = df['diffuse_rad:W'] / df['diffuse_rad:W'].max()
+    df['effective_cloud_cover:octas'] = df['effective_cloud_cover:octas'] / df['effective_cloud_cover:octas'].max()
+    df['t_2m:C'] = df['t_2m:C'] / df['t_2m:C'].max()
+
+    return df
+
+def load_weather_data(folder):
+    """ 
+    Get weather data from folder and preprocess it
+
+    
+    """
+    # TODO make this get the pv_data folder remotely
+    # get path to directory
+    current_directory = os.getcwd().split("Dissertation")[0] + 'pv_data/weather_data'
+    # get list of files in directory
+    files = os.listdir(current_directory)
+    # remove DS_Store file
+    files.pop(0)
+    # sort files
+    files.sort()
+
+    df_dict = {}
+    for file in files:
+        path_to_file = os.path.join(current_directory, file)
+        df = pd.read_csv(path_to_file, sep=';')
+        df = preprocess_weather(df)
+        df_dict[file] = df
+    
+    df_list = [df for df in df_dict.values()]
+    df_weather = pd.concat(df_list, axis=0)
+    
+    return df_weather
+
+def merge_weather_and_pv(df_weather, df_pv):
+    # Convert 'datetime' columns to datetime type if not already done
+    df_pv['datetime'] = pd.to_datetime(df_pv['datetime'])
+    df_weather['datetime'] = pd.to_datetime(df_weather['datetime'])
+
+    # get the data in df_pv that has the latitude longitude pairs from unique_coords
+    unique_coords = df_weather[['lat', 'lon']].drop_duplicates()
+    merged_dataframes = []
+
+    for _, row in unique_coords.iterrows():
+        lat, lon = row['lat'], row['lon']
+        pv_test = df_pv[(df_pv['latitude'] == lat) & (df_pv['longitude'] == lon)]
+        weather_test = df_weather[(df_weather['lat'] == lat) & (df_weather['lon'] == lon)]
+        weather_test = weather_test.drop(['lat', 'lon'], axis=1)
+
+        # Merge the two data frames on the 'datetime' column
+        merged_df = weather_test.merge(pv_test, on='datetime')
+        # drop nan values if any by row
+        merged_df = merged_df.dropna(axis=0)
+        merged_dataframes.append(merged_df)
+        print(merged_df.shape)
+
+    # Concatenate all the merged data frames into a single data frame
+    final_merged_df = pd.concat(merged_dataframes, ignore_index=True)
+    
+    return final_merged_df
+
+

@@ -40,12 +40,6 @@ class ApproximateGPBaseModel(ApproximateGP):
             assert y.min() >= 0 and y.max() <= 1, 'y must be in the range [0, 1] for Beta likelihood'
         assert X.size(0) == y.size(0), 'X and y must have same number of data points'
         
-        # add perturbation to the data to avoid numerical issues for bounded outputs
-        if y.min() == 0:
-            y += jitter
-        
-        if y.max() == 1:
-            y -= jitter
         
         self.X = X
         self.y = y

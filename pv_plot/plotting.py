@@ -35,7 +35,12 @@ def plot_grid(df, coords, radius=1, distance_method='circle'):
     map_uk.fillcontinents(color='forestgreen', lake_color='lightblue', alpha=0.5)
 
     # Plot PV systems
-    x, y = map_uk(df['longitude_noisy'].values, df['latitude_noisy'].values)
+    if 'latitude_noisy' in df.columns:
+        x, y = map_uk(df['longitude_noisy'].values, df['latitude_noisy'].values)
+    
+    elif 'latitude' in df.columns:
+        x, y = map_uk(df['longitude'].values, df['latitude'].values)
+
     map_uk.scatter(x, y, alpha=0.4, color='b', label='PV systems')
 
     if distance_method == 'circle':
@@ -482,32 +487,3 @@ def plot_alpha_beta(model):
     ax2.legend(lines + lines2, labels + labels2, loc='upper right')
 
     plt.show()
-
-def rgetattr(obj, k_list):
-    """
-    Function for deep accessing objects
-
-    For example:
-    rgetattr(obj, ['a', 'b']) == obj.a.b
-    """
-    for k in k_list:
-        obj = getattr(obj, k)
-    return obj
-
-def print_module(model, n_digits=4):
-    """
-    Print Torch modules in a conveninent way
-    
-    """
-    print(f'{"parameter":35} {"device":7} {"dtype":7} {"shape":7}')
-    with torch.no_grad():
-        for param_name, param in model.named_parameters():
-            if param_name[:3] == 'var':
-                continue
-            
-            param_name = param_name.replace('raw_', '')
-            param = rgetattr(model, param_name.split("."))
-            print(
-                f'{param_name:35} {param.device.type:7} {str(param.dtype)[6:]:7} '
-                f'{str(tuple(param.shape)):7} {param.numpy().round(n_digits)}'
-            )
