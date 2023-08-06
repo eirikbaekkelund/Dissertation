@@ -1,7 +1,6 @@
 import torch
 from data.utils import *
 from typing import Optional
-from torch.utils.data import Dataset
 
 class PVDataGenerator:
     """
