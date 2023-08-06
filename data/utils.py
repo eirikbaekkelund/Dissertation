@@ -788,7 +788,6 @@ def merge_weather_and_pv(df_weather, df_pv):
         # drop nan values if any by row
         merged_df = merged_df.dropna(axis=0)
         merged_dataframes.append(merged_df)
-        print(merged_df.shape)
 
     # Concatenate all the merged data frames into a single data frame
     final_merged_df = pd.concat(merged_dataframes, ignore_index=True)

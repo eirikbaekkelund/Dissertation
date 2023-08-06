@@ -41,7 +41,7 @@ class ApproximateGPBaseModel(ApproximateGP):
         assert X.size(0) == y.size(0), 'X and y must have same number of data points'
         
         # avoids numerical issues with Cholesky decomposition
-        # can result in all NaNs at first iteration
+        # can result in all NaNs at first iteration if 0 and 1 are present in y
         if y.min() == 0:
             y[y == 0] += 1e-10
 

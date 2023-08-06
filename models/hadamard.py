@@ -1,4 +1,6 @@
+import torch
 import gpytorch
+from gpytorch.distributions import MultivariateNormal
 from gpytorch.models import ApproximateGP
 from likelihoods import MultitaskBetaLikelihood
 from gpytorch.kernels import IndexKernel
@@ -37,6 +39,7 @@ class HadamardGP(MultitaskGPModel):
 
         # TODO check if this should have number of latents or number of tasks
         self.task_covar_module = IndexKernel(batch_shape=torch.Size([num_latents]), rank=1)
+        # TODO see if this initialization is correct
     
     def forward(self, x, i):
         
@@ -47,4 +50,16 @@ class HadamardGP(MultitaskGPModel):
         covar = covar_x.mul(covar_i)
         
         return MultivariateNormal(mean_x, covar)
+
+    def fit(self, 
+            n_iter : int,
+            lr : float,
+            verbose : bool = False,
+            use_wandb : bool = False,):
+        # TODO
+        pass
+
+    def predict(self, x, i):
+        # TODO
+        pass
    

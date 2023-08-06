@@ -39,7 +39,6 @@ class MultitaskGPModel(ApproximateGP):
                                     inducing_points=X, 
                                     variational_distribution=variational_distribution, 
                                     learn_inducing_locations=learn_inducing_locations,
-                                   # jitter_val=jitter
                                 ),
                             num_tasks=num_tasks,
                             num_latents=num_latents,
