@@ -19,9 +19,9 @@ class YesterdayForecast():
         self.daily_points = get_daily_points(day_min, day_max, minute_interval)
     
     def predict(self, y, n_hours=2):
-        start_idx = self.daily_points
-        end_idx = int(start_idx + self.n_hourly_points * n_hours)
-        return y[-end_idx:-start_idx]
+        yday_start = self.daily_points
+        pred_length = int(self.daily_points - self.n_hourly_points * n_hours)
+        return y[-yday_start:-pred_length]
 
 class HourlyAverage():
     def __init__(self, day_min, day_max, minute_interval):
@@ -76,7 +76,7 @@ def fit_exp(y_train, pred_points):
     fitted_model = model.fit()
     y_pred = fitted_model.forecast(pred_points)
     y_pred = np.clip(y_pred, 0, 1)
-    return y_pred
+    return y_pred, fitted_model
 
 def fit_simple_exp(y_train, pred_points):
 
@@ -88,6 +88,18 @@ def fit_simple_exp(y_train, pred_points):
     fitted_model = model.fit()
     y_pred = fitted_model.forecast(pred_points)
     y_pred = np.clip(y_pred, 0, 1)
-    return y_pred
+    return y_pred, fitted_model
+
+def var_exp_simulation(model_fit, y_pred, n_pred=24):
+    var = model_fit.simulate(nsimulations=n_pred, anchor='end', repetitions=1000).var(axis=1)
+    
+    var_lower = (y_pred**2 / 4)
+    var_upper = (1 - y_pred)**2 / 4
+    
+    var = np.maximum(var, var_lower)
+    var = np.minimum(var, var_upper)
+    return var
+
+
 
         

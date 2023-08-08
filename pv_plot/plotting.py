@@ -493,7 +493,7 @@ def plot_alpha_beta(model):
 
 def boxplot_forecast_horizon(df_dict, pred_points=24, season : Optional[str] = None):
     
-    fig, ax = plt.subplots(len(df_dict) //2 , 2, figsize=(30, 15), sharey=True, sharex=True)
+    fig, ax = plt.subplots(len(df_dict) //2 , 2, figsize=(30, 20), sharey=True, sharex=True)
     plt.rcParams.update({'font.family': 'Arial'})
     ax = ax.flatten()
     

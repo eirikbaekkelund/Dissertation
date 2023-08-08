@@ -1,1 +1,1 @@
-from .metrics import mean_absolute_error, nlpd, get_mean_ci, inside_ci, log_score_function
+from .metrics import mean_absolute_error, get_mean_ci, inside_ci, nlpd_holt

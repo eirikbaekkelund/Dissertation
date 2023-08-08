@@ -6,8 +6,9 @@ from models.baselines import (YesterdayForecast,
                               Persistence, 
                               fit_var, 
                               fit_exp, 
-                              fit_simple_exp)
-from metrics import mean_absolute_error, get_mean_ci, inside_ci, log_score_function
+                              fit_simple_exp,
+                              var_exp_simulation)
+from metrics import mean_absolute_error, get_mean_ci, inside_ci, nlpd_holt
 from models import ApproximateGPBaseModel, MultitaskGPModel
 from gpytorch.metrics import negative_log_predictive_density as NLPD
 from data import PVDataGenerator, PVDataLoader
@@ -23,13 +24,15 @@ torch.manual_seed(42)
 np.random.seed(42)
 
 # UGLY CODE FOR RUNNING EXPERIMENTS, NO TIME TO CLEAN
+# TODO clean code to make it more pythonic
 
 if __name__ == '__main__':
     # data parameters
     DAY_INIT = 0
     DAY_MIN = 8
     DAY_MAX = 16
-    N_DAYS = 120
+    # 90 days is roughly a season
+    N_DAYS = 90
     N_DAYS_TRAIN = 5
     MINUTE_INTERVAL = 5
     DAILY_POINTS = (DAY_MAX - DAY_MIN) * 60 // MINUTE_INTERVAL
@@ -40,10 +43,10 @@ if __name__ == '__main__':
     N_SYSTEMS = 15
     RADIUS = 0.35
     CIRCLE_COORDS = (55, -1.5)
-    plot_results = False
+    plot_results = True
 
     models_list =['persistence', 'yesterday', 'hourly_avg', 'var', 
-                  'simple_exp', 'exp', 'gp', 'multitask_gp', 'holt']
+                  'simple_exp', 'exp', 'gp', 'multitask_gp']
     seasons = ['winter', 'spring', 'summer', 'fall']
     # gp model configuration
     jitter = 1e-3
@@ -98,7 +101,7 @@ if __name__ == '__main__':
         df_persistence = None
         df_gp = None
         df_multitask_gp = None
-        df_multitask_gp_nlpl = None
+        df_multitask_gp_nlpd = None
         psd_error = False
 
         for (x_train, y_train), (x_test, y_test) in zip(train_loader, test_loader):
@@ -130,32 +133,50 @@ if __name__ == '__main__':
                             new_df = pd.DataFrame({f'var_mae{var_j}': mae[:,k]})
                             df_var = pd.concat([df_var, new_df], axis=1)
                         var_j += 1
-                elif model == 'exp':
-                    
+                if model == 'exp':
+                
                     for k in range(y_train.shape[-1]): 
-                        y_pred = fit_exp(y_train[:,k], PRED_POINTS)
+                        y_pred, fitted_model = fit_exp(y_train[:,k], PRED_POINTS)
+                        var = var_exp_simulation(fitted_model, y_pred, n_pred=PRED_POINTS)
+                    
                         if np.isnan(y_pred).any():
                             continue
                         mae = mean_absolute_error(y_test[:,k], y_pred)
+                        nlpd = nlpd_holt(y_pred, var, y_test[:,k])
+
                         if df_exp is None:
                             df_exp = pd.DataFrame({f'exp_mae{exp_j}': mae})
+                            df_exp_nlpd = pd.DataFrame({f'exp_nlpd{exp_j}': nlpd})
                         else:
                             new_df = pd.DataFrame({f'exp_mae{exp_j}': mae})
                             df_exp = pd.concat([df_exp, new_df], axis=1)
+
+                            new_df = pd.DataFrame({f'exp_nlpd{exp_j}': nlpd})
+                            df_exp_nlpd = pd.concat([df_exp_nlpd, new_df], axis=1)
+                        
+                        exp_j += 1
                 
                 elif model == 'simple_exp':
                     for k in range(y_train.shape[-1]): 
-                        y_pred = fit_simple_exp(y_train[:,k], PRED_POINTS)
+                        y_pred, fitted_model = fit_simple_exp(y_train[:,k], PRED_POINTS)
+                        var = var_exp_simulation(fitted_model, y_pred, n_pred=PRED_POINTS)
+                    
                         if np.isnan(y_pred).any():
                             continue
                         mae = mean_absolute_error(y_test[:,k], y_pred)
+                        nlpd = nlpd_holt(y_pred, var, y_test[:,k])
+                    
                         if df_simple_exp is None:
                             df_simple_exp = pd.DataFrame({f'simple_exp_mae{simple_exp_j}': mae})
+                            df_simple_exp_nlpd = pd.DataFrame({f'simple_exp_nlpd{simple_exp_j}': nlpd})
                         else:
                             new_df = pd.DataFrame({f'simple_exp_mae{simple_exp_j}': mae})
                             df_simple_exp = pd.concat([df_simple_exp, new_df], axis=1)
+
+                            new_df = pd.DataFrame({f'simple_exp_nlpd{simple_exp_j}': nlpd})
+                            df_simple_exp_nlpd = pd.concat([df_simple_exp_nlpd, new_df], axis=1)
                         simple_exp_j += 1
-                
+                    
                 elif model == 'yesterday':
                     model = YesterdayForecast(DAY_MIN, DAY_MAX, MINUTE_INTERVAL)
                     y_pred = model.predict(y_train)
@@ -341,8 +362,7 @@ if __name__ == '__main__':
                 'Hourly Average': df_hourly_avg, 
                 'Persistence': df_persistence,
                 'GP': df_gp,
-                'GP_pct': df_gp_pct,
-                'GP_nlpd': df_gp_nlpd
+                'GP NLPD': df_gp_nlpd,
                 }
 
         # save data frames to csv in current directory
@@ -352,7 +372,9 @@ if __name__ == '__main__':
         
         mean_var, lower_var, upper_var = get_mean_ci(df_var)
         mean_exp, lower_exp, upper_exp = get_mean_ci(df_exp)
+        mean_exp_nlpd, lower_exp_nlpd, upper_exp_nlpd = get_mean_ci(df_exp_nlpd)
         mean_simple_exp, lower_simple_exp, upper_simple_exp = get_mean_ci(df_simple_exp)
+        mean_simple_exp_nlpd, lower_simple_exp_nlpd, upper_simple_exp_nlpd = get_mean_ci(df_simple_exp_nlpd)
         mean_yesterday, lower_yesterday, upper_yesterday = get_mean_ci(df_yesterday)
         mean_hourly_avg, lower_hourly_avg, upper_hourly_avg = get_mean_ci(df_hourly_avg)
         mean_persistence, lower_persistence, upper_persistence = get_mean_ci(df_persistence)
@@ -362,6 +384,7 @@ if __name__ == '__main__':
         mean_nlpl_multi_gp, lower_nlpl_multi_gp, upper_nlpl_multi_gp = get_mean_ci(df_multitask_nlpd)
 
 
+
         results = {'VAR': {'mean': mean_var, 'lower': lower_var, 'upper': upper_var},
         'Seasonal Exponential Smoothing': {'mean': mean_exp, 'lower': lower_exp, 'upper': upper_exp},
         'Simple Exponential Smoothing': {'mean': mean_simple_exp, 'lower': lower_simple_exp, 'upper': upper_simple_exp},
@@ -369,15 +392,23 @@ if __name__ == '__main__':
         'Hourly Average': {'mean': mean_hourly_avg, 'lower': lower_hourly_avg, 'upper': upper_hourly_avg},
         'Persistence': {'mean': mean_persistence, 'lower': lower_persistence, 'upper': upper_persistence},
         'GP': {'mean': mean_gp, 'lower': lower_gp, 'upper': upper_gp},
-        'GP NLPD': {'mean': mean_nlpl_gp, 'lower': lower_nlpl_gp, 'upper': upper_nlpl_gp},
         'Multitask GP': {'mean': mean_multi_gp, 'lower': lower_multi_gp, 'upper': upper_multi_gp},
-        'Multitask GP NLPD': {'mean': mean_nlpl_multi_gp, 'lower': lower_nlpl_multi_gp, 'upper': upper_nlpl_multi_gp}
         }
 
         # save results to csv in current directory
         for model_name, result_dict in results.items():
             df = pd.DataFrame(result_dict)
             df.to_csv(f'results_{model_name}_{season}.csv')
+        
+        nlpds = {'GP': {'mean': mean_nlpl_gp, 'lower': lower_nlpl_gp, 'upper': upper_nlpl_gp},
+            'Multitask GP': {'mean': mean_nlpl_multi_gp, 'lower': lower_nlpl_multi_gp, 'upper': upper_nlpl_multi_gp},
+            'Seasonal Exponential Smoothing': {'mean': mean_exp_nlpd, 'lower': lower_exp_nlpd, 'upper': upper_exp_nlpd},
+            'Simple Exponential Smoothing': {'mean': mean_simple_exp_nlpd, 'lower': lower_simple_exp_nlpd, 'upper': upper_simple_exp_nlpd},
+            }
+        
+        for model_name, result_dict in nlpds.items():
+            df = pd.DataFrame(result_dict)
+            df.to_csv(f'nlpd_{model_name}_{season}.csv')
     
     if plot_results:
         plot_forecast_mae(results, season)
