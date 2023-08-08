@@ -14,6 +14,7 @@ class BetaLikelihood_MeanParametrization(gpytorch.likelihoods.BetaLikelihood):
                  correcting_scale  : Optional[float] = 1,
                  correcting_scale_lower_bound : Optional[float] = 0.1,
                  correcting_scale_upper_bound : Optional[float] = 0.9,
+                 correcting_scale_grad : Optional[bool] = False,
                  *args, **kwargs):
         
         super().__init__(*args, **kwargs)
@@ -24,11 +25,13 @@ class BetaLikelihood_MeanParametrization(gpytorch.likelihoods.BetaLikelihood):
         assert 0 <= correcting_scale_upper_bound <= 1, 'upper bound must be in [0, 1]'
         assert correcting_scale_lower_bound < correcting_scale_upper_bound, 'lower bound must be smaller than upper bound'
         
-        self.scale = scale        
-        self.correcting_scale = Parameter(torch.tensor(correcting_scale, dtype=torch.float64), 
-                                            requires_grad=False)
-
-    
+        self.scale = scale 
+        # can set grad to True if we want to impose a correction on the scale parameter
+        # in regions where there is a higher noise level
+        if correcting_scale_grad:
+            self.correcting_scale = Parameter(torch.tensor(correcting_scale, dtype=torch.float64), 
+                                              requires_grad=correcting_scale_grad)       
+       
     def forward(self, function_samples, *args, **kwargs):
         
         mixture = torch.distributions.Normal(0, 1).cdf(function_samples)
@@ -36,13 +39,10 @@ class BetaLikelihood_MeanParametrization(gpytorch.likelihoods.BetaLikelihood):
         self.alpha = mixture * self.scale 
         self.beta = self.scale - self.alpha 
 
-        # self.alpha = torch.where((mixture > self.correcting_scale_lower_bound) | 
-        #                          (mixture < self.correcting_scale_upper_bound), 
-        #                          self.correcting_scale * alpha, alpha)
-        
-        # self.beta = torch.where((mixture > self.correcting_scale_lower_bound) | 
-        #                         (mixture < self.correcting_scale_upper_bound), 
-        #                         self.correcting_scale * beta, beta)
+        # apply correction to the scale parameter if passed
+        if hasattr(self, 'correcting_scale'):
+            pass 
+            # see previous version of this file for the implementation of the correction
         
         self.alpha = torch.clamp(self.alpha, 1e-10, 1e10)
         self.beta = torch.clamp(self.beta, 1e-10, 1e10)

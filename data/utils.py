@@ -313,7 +313,6 @@ def find_nearby_systems_poly(df_location, c1, c2, c3, c4):
         lat, lon = row[lat_col], row[lon_col]
         
         if polygon.contains(Point(lat, lon)):
-            print(f'Found system at ({lat}, {lon})')
             df = df_location[(df_location[lat_col] == lat) & (df_location[lon_col] == lon)]
             df_list.append(df)
 
@@ -504,6 +503,8 @@ def prediction_index(hour, hourly_points, day_max, n_hours):
     """ 
     Get the index of the first data point to predict and
     the index of the last data point to predict.
+    
+    !Note that it is negative indexing!
 
     Args:
         hour (int): hour of the day
@@ -607,7 +608,7 @@ def cross_val_fold(X, y, n_days, daily_points):
     """
     interval = int(n_days * daily_points)
    
-    x_list = [X[i:i+interval, :] if len(X.shape) > 1 else X[i:i+interval] 
+    x_list = [torch.linspace(0, 120, len(X[i:i+interval]))
               for i in range(0, len(X), interval)]
     
     y_list = [y[i:i+interval] for i in range(0, len(y), interval)]
@@ -709,7 +710,7 @@ def store_gp_module_parameters(model, n_digits=4, verbose=False):
     return param_dict
 
 # THESE ARE HARD CODED FOR LOCAL MACHINE TO UPLOAD AND SAVE FILES
-# WOULD NEED TO CHANGE FOR REMOTE / DIFFERENT MACHINE
+# WOULD NEED TO CHANGE FOR DIFFERENT SETUPS
 
 def preprocess_weather(df):
     """ 
@@ -794,4 +795,27 @@ def merge_weather_and_pv(df_weather, df_pv):
     
     return final_merged_df
 
+
+def check_model_inputs(x_train, y_train, x_test, y_test):
+    for i in range(y_train.shape[-1] - 1):
+        if (torch.sum(y_train[:,i] == y_train[0,i]) == y_train.shape[0]):
+            print(f'column {i} is constant')
+            # remove column from y_train and y_test
+            y_train = torch.cat([y_train[:,:i], y_train[:,i+1:]], dim=-1)
+            y_test = torch.cat([y_test[:,:i], y_test[:,i+1:]], dim=-1)
+        
+    # remove rows with nan values
+    if torch.isnan(y_train).any():
+        y_train = y_train[~torch.any(y_train.isnan(),dim=1)]
+        x_train = x_train[:y_train.shape[0]]
+        
+    if y_train.shape[0] <= 250:
+        print(f'skipping this iteration, min obs is violated for Exp smoothing')
+        return None, None, None, None
+    elif len(y_train.shape) == 1:
+        return None, None, None, None
+    
+    
+    
+    return x_train, y_train, x_test, y_test
 

@@ -1,45 +1,93 @@
-from abc import ABC, abstractmethod
-from statsmodels.tsa.api import AutoReg, ARIMA
-from data.utils import get_hourly_data_points, get_daily_data_points
+import numpy as np
+from statsmodels.tsa.api import (VAR, 
+                                 ExponentialSmoothing, 
+                                 SimpleExpSmoothing, 
+                                 Holt)
+from data.utils import get_hourly_points, get_daily_points
 
-class BaselineForecast(ABC):
-    def __init__(self, y_train):
-        self.y_train = y_train
-    
-    @abstractmethod
-    def fit(self):
-        """ 
-        Fit the model
-        """
-        pass
+class Persistence():
 
-    @abstractmethod
-    def predict(self, n_steps):
-        """ 
-        Predict n_steps ahead
-        """
-        pass
+    def predict(self, y, n_steps):
+        y_pred = np.zeros((n_steps, y.shape[1]))
+        y_pred[:] = y[-1]
+        return y_pred
 
-class PersistenceForecast(BaselineForecast):
-   
-    def fit(self):
-        pass
-
-    def predict(self, n_steps):
-        return self.y_train[-1].repeat(n_steps)
-
-class YesterdayForecast(BaselineForecast):
-    def __init__(self, y_train, minute_interval, day_min, day_max):
-        super().__init__(y_train)
-        self.n_hourly_points = get_hourly_data_points(y_train, minute_interval, day_min, day_max)
-        self.daily_points = get_daily_data_points(y_train, minute_interval, day_min, day_max)
-    
-    def fit(self):
-        pass
-
-    def predict(self, n_hours):
-        start_idx = self.daily_points
-        end_idx = start_idx + self.n_hourly_points
-        return self.y_train[start_idx:end_idx]
+class YesterdayForecast():
+    def __init__(self, day_min, day_max, minute_interval):
         
+        self.n_hourly_points = get_hourly_points(day_min, day_max, minute_interval)
+        self.daily_points = get_daily_points(day_min, day_max, minute_interval)
+    
+    def predict(self, y, n_hours=2):
+        start_idx = self.daily_points
+        end_idx = int(start_idx + self.n_hourly_points * n_hours)
+        return y[-end_idx:-start_idx]
+
+class HourlyAverage():
+    def __init__(self, day_min, day_max, minute_interval):
+        self.minute_interval = minute_interval
+        self.n_hourly_points = get_hourly_points(day_min, day_max, minute_interval)
+
+    def predict(self, y, n_hours=2):
+        """ 
+        Use hourly average to predict n_hours ahead.
+        It should predict by doing 
+
+        y_pred = 1 / T * \sum_{t=1}^T y_{t + \delta t - I*t} 
+        where T is the number of points per hour and I is the
+        minute interval of the data.
+
+        Args:
+            y_train (np.ndarray): training data of shape (N, T)
+            where N is the number of data points and T is the
+            number of tasks
+
+            n_hours (int): number of hours to predict ahead
+        """
+        n_preds = int(n_hours * self.n_hourly_points)
+        y_pred_means = y[-self.n_hourly_points:].mean(axis=0)
+        y_preds = np.tile(y_pred_means, (n_preds, 1))
+        
+        return y_preds
+
+def fit_var(y_train, pred_points):
+  
+    if np.isnan(y_train).any():
+        # remove nan
+        y_train = y_train[~np.isnan(y_train).any(axis=1)]
+    var = VAR(y_train)
+    fitted_model = var.fit()
+    lag_order = fitted_model.k_ar
+    y_pred = fitted_model.forecast(y_train[-lag_order:], pred_points)
+    # clip predictions to 0 and 1
+    y_pred = np.clip(y_pred, 0, 1)
+    return y_pred
+
+def fit_exp(y_train, pred_points):
+   
+    if np.isnan(y_train).any():
+        y_train = y_train[~np.isnan(y_train).any(axis=0)]
+        if y_train.shape[0] == 0:
+            return np.full(pred_points, np.nan)
+    model = ExponentialSmoothing(y_train,
+                                 seasonal_periods=96,
+                                 seasonal='add',
+                                 initialization_method='estimated')
+    fitted_model = model.fit()
+    y_pred = fitted_model.forecast(pred_points)
+    y_pred = np.clip(y_pred, 0, 1)
+    return y_pred
+
+def fit_simple_exp(y_train, pred_points):
+
+    if np.isnan(y_train).any():
+        y_train = y_train[~np.isnan(y_train).any(axis=0)]
+        if y_train.shape[0] == 0:
+            return np.full(pred_points, np.nan)
+    model = SimpleExpSmoothing(y_train, initialization_method='estimated')
+    fitted_model = model.fit()
+    y_pred = fitted_model.forecast(pred_points)
+    y_pred = np.clip(y_pred, 0, 1)
+    return y_pred
+
         

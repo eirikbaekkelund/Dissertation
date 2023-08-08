@@ -37,6 +37,13 @@ class ApproximateGPBaseModel(ApproximateGP):
                  ):
         
         if isinstance(likelihood, gpytorch.likelihoods.BetaLikelihood):
+            if y.max() > 1:
+                print('y max, ', y.max())
+                y = y / y.max()
+            if y.min() < 0:
+                y[ y < 0] = 0
+                print('y min, ', y.min())
+
             assert y.min() >= 0 and y.max() <= 1, 'y must be in the range [0, 1] for Beta likelihood'
         assert X.size(0) == y.size(0), 'X and y must have same number of data points'
         
@@ -106,7 +113,8 @@ class ApproximateGPBaseModel(ApproximateGP):
             n_iter : int, 
             lr : float,
             verbose : bool = True,
-            use_wandb : bool = False):
+            use_wandb : bool = False,
+            objective = 'elbo'):
         """
         Train the GP model using SVI
 
@@ -117,6 +125,7 @@ class ApproximateGPBaseModel(ApproximateGP):
             device (torch.device): device to train on
             verbose (bool): whether to print training progress
         """        
+        assert objective in ['elbo', 'pred_log'], 'objective must be one of: elbo, pred_log'
         self.train()
         self.likelihood.train()
 
@@ -141,7 +150,12 @@ class ApproximateGPBaseModel(ApproximateGP):
         
 
         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
-        elbo = gpytorch.mlls.VariationalELBO(likelihood=self.likelihood, 
+        if objective == 'pred_log':
+            mll = gpytorch.mlls.PredictiveLogLikelihood(likelihood=self.likelihood, 
+                                                         model=self, 
+                                                         num_data=self.y.size(0))
+        else:
+            mll = gpytorch.mlls.VariationalELBO(likelihood=self.likelihood, 
                                             model=self, 
                                             num_data=self.y.size(0))
         
@@ -157,7 +171,7 @@ class ApproximateGPBaseModel(ApproximateGP):
                 optimizer.zero_grad()
             
             output = self(self.X)
-            loss = -elbo(output, self.y)
+            loss = -mll(output, self.y)
             loss.backward()
             
             losses.append(loss.item())
@@ -199,7 +213,7 @@ class ApproximateGPBaseModel(ApproximateGP):
         Returns:
             torch.Tensor: posterior mean
         """
-        return samples.mean(axis=0)
+        return samples.mean(axis=0).mean(axis=0)
     
     def predict_median(self, samples):
         """ 
@@ -211,7 +225,7 @@ class ApproximateGPBaseModel(ApproximateGP):
         Returns:
             torch.Tensor: posterior median from MC samples
         """
-        return samples.median(axis=0).values
+        return samples.median(axis=0).values.mean(axis=0)
 
     def predict_mode(self):
         """ 
@@ -279,6 +293,8 @@ class ApproximateGPBaseModel(ApproximateGP):
                     # samples from the posterior predictive distribution
                     samples = preds.sample(sample_shape=torch.Size([30]))
                     lower, upper = self.confidence_region(samples)
+                    lower = lower.mean(axis=0)
+                    upper = upper.mean(axis=0)
 
                     if pred_type == 'median':
                         median = self.predict_median(samples)
@@ -298,7 +314,7 @@ class ApproximateGPBaseModel(ApproximateGP):
                         mode = self.predict_mode()
                         return median, mean, mode, lower, upper
 
-            # Closed form for Gaussian likelihoods
+            # Gaussian likelihoods
             else:
                 return self.likelihood(self(x))
             

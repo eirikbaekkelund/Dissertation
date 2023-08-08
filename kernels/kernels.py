@@ -5,8 +5,9 @@ from gpytorch.kernels import (MaternKernel,
                               ScaleKernel, 
                               AdditiveKernel, 
                               ProductKernel)
+from gpytorch.means import ZeroMean
 from gpytorch.priors import Prior
-from gpytorch.constraints import Positive
+from gpytorch.constraints import Positive, Interval
 from typing import Optional
 
 class Kernel:
@@ -76,3 +77,20 @@ class Kernel:
         quasi_periodic.batch_shape = torch.Size([self.num_latent])
 
         return quasi_periodic
+
+def get_mean_covar(num_latent=1):
+    mean = ZeroMean(batch_shape=torch.Size([num_latent]))
+
+    kernel = Kernel(num_latent=num_latent)
+    matern_base = kernel.get_matern(lengthscale_constraint=Positive(),
+                                    outputscale_constraint=Positive())
+    matern_quasi = kernel.get_matern(lengthscale_constraint=Interval(0.3, 1000.0),
+                                    outputscale_constraint=Positive())
+    periodic1 = kernel.get_periodic(lengthscale_constraint= Positive(),
+                                    outputscale_constraint=Positive())
+
+    covar = kernel.get_quasi_periodic(matern_base=matern_base, 
+                                        matern_quasi=matern_quasi,
+                                        periodic1=periodic1)
+    
+    return mean, covar
