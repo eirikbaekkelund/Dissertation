@@ -543,6 +543,10 @@ def assign_month_and_season(df):
 
 def filter_by_season(df, season):
     assert 'datetime' in df.columns, 'datetime column not found'
+    # ignore SettingWithCopyWarning
+    import warnings
+    warnings.filterwarnings("ignore")
+    
     df = assign_month_and_season(df)
     df = df[df['season'] == season]
     df.drop('season', axis=1, inplace=True)

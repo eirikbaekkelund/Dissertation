@@ -1,65 +1,80 @@
 import torch
 import gpytorch
-from gpytorch.distributions import MultivariateNormal
-from gpytorch.models import ApproximateGP
-from likelihoods import MultitaskBetaLikelihood
-from gpytorch.kernels import IndexKernel
-from gpytorch.variational import (VariationalStrategy,
-                                  LMCVariationalStrategy,
-                                  MeanFieldVariationalDistribution)
-from models import MultitaskGPModel
+from gpytorch.variational import IndependentMultitaskVariationalStrategy
 
+class IndependentMultitaskGPModel(gpytorch.models.ApproximateGP):
+    def __init__(self, 
+                X : torch.Tensor,
+                y : torch.Tensor,
+                mean_module : gpytorch.means.Mean,
+                covar_module : gpytorch.kernels.Kernel,
+                likelihood : gpytorch.likelihoods.Likelihood,
+                num_tasks : int):
 
-class HadamardGP(MultitaskGPModel):
-    
-    def __init__(self,
-                 X : torch.Tensor,
-                 y : torch.Tensor,
-                 likelihood : gpytorch.likelihoods.Likelihood = None,
-                 mean_module : gpytorch.means.Mean = None,
-                 covar_module : gpytorch.kernels.Kernel = None,
-                 num_latents : int = 1,
-                 learn_inducing_locations : bool = False,
-                 jitter : float = 1e-4):
+        # need to ensure that y_train is in (0, 1)
+        if y.max() >= 1:
+            y[y >= 1] = 1 - 1e-4
+        if y.min() <= 0:
+            y[y <= 0] = 1e-4
 
-        assert num_latents == mean_module.batch_shape[0], 'num_latents must be equal to the batch_shape of the mean module'
-        assert num_latents == covar_module.batch_shape[0], 'num_latents must be equal to the batch_shape of the covar module'
+        # We have to mark the CholeskyVariationalDistribution as batch
+        # so that we learn a variational distribution for each task
+        variational_distribution = gpytorch.variational.MeanFieldVariationalDistribution(
+            X.size(0), batch_shape=torch.Size([num_tasks])
+        )
 
-        # TODO check if LMC is necessary/works
-        super().__init__(X=X,
-                        y=y,
-                        likelihood=likelihood,
-                        mean_module=mean_module,
-                        covar_module=covar_module,
-                        num_latents=num_latents,
-                        learn_inducing_locations=learn_inducing_locations, 
-                        jitter=jitter)
-        # Since the index kernel does some scaling, the passed 
-        # covar module should possibly not scale to avoid overparameterization
+        variational_strategy = IndependentMultitaskVariationalStrategy(
+            gpytorch.variational.VariationalStrategy(
+                self, X, variational_distribution, learn_inducing_locations=False
+            ),
+            num_tasks=num_tasks,
+        )
 
-        # TODO check if this should have number of latents or number of tasks
-        self.task_covar_module = IndexKernel(batch_shape=torch.Size([num_latents]), rank=1)
-        # TODO see if this initialization is correct
-    
-    def forward(self, x, i):
+        super().__init__(variational_strategy)
+
+        # The mean and covariance modules should be marked as batch
+        # so we learn a different set of hyperparameters
+        self.X = X
+        self.y = y
+        self.mean_module = mean_module
+        self.covar_module = covar_module
+        self.likelihood = likelihood
         
+
+    def forward(self, x):
+        # The forward function should be written as if we were dealing with each output
+        # dimension in batch
         mean_x = self.mean_module(x)
-        
         covar_x = self.covar_module(x)
-        covar_i = self.task_covar_module(i)
-        covar = covar_x.mul(covar_i)
-        
-        return MultivariateNormal(mean_x, covar)
-
-    def fit(self, 
+    
+        return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
+    
+    def fit(self,
             n_iter : int,
             lr : float,
+            task_indices : torch.Tensor,
             verbose : bool = False,
-            use_wandb : bool = False,):
-        # TODO
-        pass
+            use_wandb : bool = False):
+        self.train()
+        self.likelihood.train()
 
-    def predict(self, x, i):
-        # TODO
-        pass
-   
+        optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+        elbo = gpytorch.mlls.VariationalELBO(likelihood=self.likelihood, 
+                                             model=self, 
+                                             num_data=self.y.size(0))
+
+        print_freq = 10
+
+        for i in range(n_iter):
+            optimizer.zero_grad()
+            output = self(self.X, task_indices=task_indices)
+            loss = -elbo(output, self.y, task_indices=task_indices)
+            loss.backward()
+            optimizer.step()
+
+            if verbose and (i + 1) % print_freq == 0:
+                print(f"Iter {i + 1}/{n_iter} - Loss: {loss.item()}")
+
+            if use_wandb and i % print_freq == 0:
+                pass 
+                # TODO log to wandb
