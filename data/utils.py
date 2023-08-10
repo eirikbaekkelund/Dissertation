@@ -579,12 +579,9 @@ def train_test_split(X, y, hour, minute_interval=5, day_min=8, day_max=16, n_hou
     y_train = y[:-start_idx]
     y_test = y[-start_idx:-end_idx]
 
-    if len(X.shape) == 1:
-        X_train = X[:-start_idx]
-        X_test = X[-start_idx:-end_idx]
-    else:
-        X_train = X[:-start_idx, :]
-        X_test = X[-start_idx:-end_idx, :]
+    X_train = X[:-start_idx]
+    X_test = X[-start_idx:-end_idx]
+
 
     if torch.cuda.is_available():
         return X_train.cuda(), y_train.cuda(), X_test.cuda(), y_test.cuda()

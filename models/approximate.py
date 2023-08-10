@@ -2,7 +2,7 @@ import gpytorch
 import torch
 import numpy as np
 from gpytorch.models import ApproximateGP
-from gpytorch.variational import VariationalStrategy
+from gpytorch.variational import VariationalStrategy, UnwhitenedVariationalStrategy
 from gpytorch.distributions import MultivariateNormal
 from models.variational import VariationalBase
 from data.utils import store_gp_module_parameters
@@ -35,25 +35,17 @@ class ApproximateGPBaseModel(ApproximateGP):
                  jitter : float = 1e-4,
                  learn_inducing_locations : bool = False
                  ):
-        
-        if isinstance(likelihood, gpytorch.likelihoods.BetaLikelihood):
-            if y.max() > 1:
-                print('y max, ', y.max())
-                y = y / y.max()
-            if y.min() < 0:
-                y[ y < 0] = 0
-                print('y min, ', y.min())
+     
 
-            assert y.min() >= 0 and y.max() <= 1, 'y must be in the range [0, 1] for Beta likelihood'
+        assert y.min() >= 0 and y.max() <= 1, 'y must be in the range [0, 1] for Beta likelihood'
         assert X.size(0) == y.size(0), 'X and y must have same number of data points'
         
-        # avoids numerical issues with Cholesky decomposition
-        # can result in all NaNs at first iteration if 0 and 1 are present in y
+        # need to constrain y to (0, 1) for Beta likelihood
         if y.min() == 0:
-            y[y == 0] += 1e-10
+            y[y == 0] += 1e-5
 
         if y.max() == 1:
-            y[y==0] -= 1e-10
+            y[y==0] -= 1e-5
 
         self.X = X
         self.y = y
@@ -62,11 +54,11 @@ class ApproximateGPBaseModel(ApproximateGP):
         
         variational_distribution = VariationalBase(config).variational_distribution
         variational_strategy = VariationalStrategy(self, 
-                                                   inducing_points=X, 
-                                                   variational_distribution=variational_distribution,
-                                                   learn_inducing_locations=learn_inducing_locations,
-                                                   jitter_val=jitter) 
-        variational_strategy.num_tasks = y.size(1) if len(y.size()) > 1 else 1
+                                inducing_points=X, 
+                                variational_distribution=variational_distribution,
+                                learn_inducing_locations=learn_inducing_locations,
+                                jitter_val=jitter
+        ) 
         
         super(ApproximateGPBaseModel, self).__init__(variational_strategy)
         
@@ -171,7 +163,7 @@ class ApproximateGPBaseModel(ApproximateGP):
                 optimizer.zero_grad()
             
             output = self(self.X)
-            loss = -mll(output, self.y)
+            loss= -mll(output, self.y)
             loss.backward()
             
             losses.append(loss.item())
@@ -284,14 +276,14 @@ class ApproximateGPBaseModel(ApproximateGP):
             
             # MC samples for non-Gaussian likelihoods
             if not isinstance(self.likelihood, gpytorch.likelihoods.GaussianLikelihood):
-                with gpytorch.settings.num_likelihood_samples(30):
+                with gpytorch.settings.num_likelihood_samples(100):
                     # get posterior predictive distribution
                     preds = self.likelihood(self(x)) 
                     
                     if pred_type == 'dist':
                         return preds
                     # samples from the posterior predictive distribution
-                    samples = preds.sample(sample_shape=torch.Size([30]))
+                    samples = preds.sample(sample_shape=torch.Size([100]))
                     lower, upper = self.confidence_region(samples)
                     lower = lower.mean(axis=0)
                     upper = upper.mean(axis=0)
