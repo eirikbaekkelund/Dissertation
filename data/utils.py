@@ -816,7 +816,5 @@ def check_model_inputs(x_train, y_train, x_test, y_test):
     elif len(y_train.shape) == 1:
         return None, None, None, None
     
-    
-    
     return x_train, y_train, x_test, y_test
 

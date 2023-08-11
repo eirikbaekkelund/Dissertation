@@ -34,8 +34,6 @@ class BetaLikelihood_MeanParametrization(gpytorch.likelihoods.BetaLikelihood):
        
     def forward(self, function_samples, *args, **kwargs):
         
-        
-        
         mixture = torch.distributions.Normal(0, 1).cdf(function_samples)
 
         self.alpha = mixture * self.scale 
