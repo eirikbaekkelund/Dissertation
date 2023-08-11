@@ -2,7 +2,8 @@ import torch
 import gpytorch
 from gpytorch.variational import IndependentMultitaskVariationalStrategy
 
-class IndependentMultitaskGPModel(gpytorch.models.ApproximateGP):
+# TODO add choice between independent and LMC
+class HadamardGP(gpytorch.models.ApproximateGP):
     def __init__(self, 
                 X : torch.Tensor,
                 y : torch.Tensor,
@@ -17,12 +18,12 @@ class IndependentMultitaskGPModel(gpytorch.models.ApproximateGP):
         if y.min() <= 0:
             y[y <= 0] = 1e-4
 
-        # We have to mark the CholeskyVariationalDistribution as batch
-        # so that we learn a variational distribution for each task
+        # We have to mark the variational distribution as batch to lean 
+        # separate variational parameters for each task
         variational_distribution = gpytorch.variational.MeanFieldVariationalDistribution(
             X.size(0), batch_shape=torch.Size([num_tasks])
         )
-
+        # TODO Consider LMC as well
         variational_strategy = IndependentMultitaskVariationalStrategy(
             gpytorch.variational.VariationalStrategy(
                 self, X, variational_distribution, learn_inducing_locations=False
