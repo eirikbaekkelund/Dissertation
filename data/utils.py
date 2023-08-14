@@ -157,7 +157,7 @@ def daily_production(df_pv, day_min, day_max):
     start_night = datetime.time(day_max, 0)
     end_night = datetime.time(day_min, 0)
 
-    day_index = [time_period for time_period in df_pv.index if time_period.time() < start_night and time_period.time() >= end_night]
+    day_index = [time_period for time_period in df_pv.index if time_period.time() <= start_night and time_period.time() >= end_night]
 
     df_pv = df_pv.loc[day_index]
 

@@ -5,4 +5,4 @@ from .multitask import MultitaskGPModel
 from .variational_lfm import VariationalLFM
 from .ordinary_lfm import OrdinaryLFM
 from .approximate_lfm import LotkaVolterra
-from .hadamard import HadamardGP
+from .hadamard import HadamardGPModel

@@ -100,8 +100,6 @@ class MultitaskBetaLikelihood(BetaLikelihood_MeanParametrization):
 
         self.register_constraint("raw_scale", scale_constraint)
 
-        print('initial scale: ', self.scale)
-
     def expected_log_prob(self, observations, function_dist, *args, **kwargs):
         ret = super().expected_log_prob(observations, function_dist, *args, **kwargs)
         
@@ -112,6 +110,7 @@ class MultitaskBetaLikelihood(BetaLikelihood_MeanParametrization):
         return ret
 
 class HadamardBetaLikelihood(MultitaskBetaLikelihood):
+    
     def forward(self, function_samples, *args, **kwargs):
         assert 'task_indices' in kwargs.keys(), 'task_indices must be passed as a keyword argument'
         mixture = torch.distributions.Normal(0, 1).cdf(function_samples)

@@ -2,13 +2,11 @@ import gpytorch
 import torch
 import numpy as np
 from gpytorch.models import ApproximateGP
-from gpytorch.variational import VariationalStrategy, UnwhitenedVariationalStrategy
+from gpytorch.variational import VariationalStrategy
 from gpytorch.distributions import MultivariateNormal
 from models.variational import VariationalBase
 from data.utils import store_gp_module_parameters
 import wandb
-
-# TODO add parameter tracking
 
 class ApproximateGPBaseModel(ApproximateGP):
     """ 
@@ -274,10 +272,10 @@ class ApproximateGPBaseModel(ApproximateGP):
         
         with torch.no_grad():
             
-            # MC samples for non-Gaussian likelihoods
+            # MC samples for non-Gaussian likelihoods approximates the marginal likelihood
             if not isinstance(self.likelihood, gpytorch.likelihoods.GaussianLikelihood):
                 with gpytorch.settings.num_likelihood_samples(100):
-                    # get posterior predictive distribution
+                    # get approximate marginal likelihood
                     preds = self.likelihood(self(x)) 
                     
                     if pred_type == 'dist':

@@ -209,6 +209,7 @@ class PVWeatherGenerator:
         lat_col, lon_col = get_lat_lon_col_names(df)
         
         self.unique_lat_lon = df[[lat_col, lon_col]].drop_duplicates()
+        print(f'Number of unique lat lon pairs: {len(self.unique_lat_lon)}')
         self.df = df.copy()
         self.start_idx, self.end_idx = start_end_index(
                                         day_init=day_init,

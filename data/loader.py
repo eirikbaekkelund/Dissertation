@@ -44,8 +44,9 @@ class PVWeatherLoader(PVWeatherGenerator, Dataset):
                  season : Optional[str] = None,
                  drop_nan : bool = True,
                  x_cols : Optional[list] =['global_rad:W', 'diffuse_rad:W',
-                                                    'effective_cloud_cover:octas',
-                                                    'relative_humidity_2m:p', 't_2m:C'],
+                                            'effective_cloud_cover:octas',
+                                            'relative_humidity_2m:p', 't_2m:C',
+                                            'wind_speed_10m:ms'],
                  y_col : Optional[str] ='PV'
                 ):
         

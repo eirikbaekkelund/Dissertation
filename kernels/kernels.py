@@ -1,6 +1,7 @@
 import torch
 import gpytorch
 from gpytorch.kernels import (MaternKernel, 
+                              RBFKernel,
                               PeriodicKernel,
                               ScaleKernel, 
                               AdditiveKernel, 
@@ -78,7 +79,19 @@ class Kernel:
 
         return quasi_periodic
 
-def get_mean_covar(num_latent=1):
+def get_mean_covar(num_latent : int = 1):
+    """
+    Returns the mean and kernel for the GP model for one dimensional input
+    using temporal kernel (quasi-periodic kernel) 
+
+    Args:
+        num_latent (int, optional): number of latent functions. Defaults to 1.
+        Particularly used for LMC in multitask GP (otherwise it is the same as num_tasks)
+    
+    Returns:
+        mean (ZeroMean): zero mean function
+        covar (ScaleKernel): kernel
+    """
     mean = ZeroMean(batch_shape=torch.Size([num_latent]))
 
     kernel = Kernel(num_latent=num_latent)
@@ -93,4 +106,33 @@ def get_mean_covar(num_latent=1):
                                         matern_quasi=matern_quasi,
                                         periodic1=periodic1)
     
+    return mean, covar
+
+def get_mean_covar_hadamard(
+        num_latents : int, 
+        d : int,
+        combine : str = 'product'):
+    """ 
+    Get the mean and kernel for Hadamard GP
+
+    Args:
+        num_latents (int): number of latent functions if LMC otherwise number of tasks
+        d : number of input dimensions
+    
+    Returns:
+        mean (ZeroMean): zero mean function
+        covar (ScaleKernel): Hadamard kernel
+    """
+    assert combine in ['product', 'sum'], "combine must be either 'product' or 'sum'"
+
+    mean, covar_t = get_mean_covar(num_latent=num_latents)
+    covar_t = ScaleKernel(covar_t)
+    covar_w = ScaleKernel(RBFKernel(batch_shape=torch.Size([num_latents])))
+
+    # set active dimension based on exogenous part and temporal part
+    covar_w.active_dims = torch.tensor([i for i in range(d-1)])
+    covar_t.active_dims = torch.tensor([d -1])
+
+    covar = covar_w * covar_t
+
     return mean, covar
