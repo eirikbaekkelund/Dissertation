@@ -6,3 +6,11 @@ from .variational_lfm import VariationalLFM
 from .ordinary_lfm import OrdinaryLFM
 from .approximate_lfm import LotkaVolterra
 from .hadamard import HadamardGPModel
+from .baselines_exogenous import LSTM, fit_bayesian_ridge, fit_xgboost
+from .baselines_temporal import (Persistence, 
+                                 YesterdayForecast, 
+                                 HourlyAverage,
+                                 fit_var,
+                                 fit_exp,
+                                 fit_simple_exp,
+                                 var_exp_simulation)

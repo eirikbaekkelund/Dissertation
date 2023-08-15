@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 import pandas as pd
-from models.baselines import (YesterdayForecast, 
+from models.baselines_temporal import (YesterdayForecast, 
                               HourlyAverage, 
                               Persistence, 
                               fit_var, 

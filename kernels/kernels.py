@@ -108,7 +108,7 @@ def get_mean_covar(num_latent : int = 1):
     
     return mean, covar
 
-def get_mean_covar_hadamard(
+def get_mean_covar_weather(
         num_latents : int, 
         d : int,
         combine : str = 'product'):
@@ -126,13 +126,16 @@ def get_mean_covar_hadamard(
     assert combine in ['product', 'sum'], "combine must be either 'product' or 'sum'"
 
     mean, covar_t = get_mean_covar(num_latent=num_latents)
-    covar_t = ScaleKernel(covar_t)
     covar_w = ScaleKernel(RBFKernel(batch_shape=torch.Size([num_latents])))
-
+    covar_t = ScaleKernel(covar_t)
+    
     # set active dimension based on exogenous part and temporal part
     covar_w.active_dims = torch.tensor([i for i in range(d-1)])
     covar_t.active_dims = torch.tensor([d -1])
 
-    covar = covar_w * covar_t
+    if combine == 'sum':
+        return mean, AdditiveKernel(covar_w, covar_t)
 
-    return mean, covar
+    return mean, ProductKernel(covar_w, covar_t)
+
+

@@ -75,7 +75,7 @@ class MultitaskGPModel(ApproximateGP):
 
         if use_wandb:
             wandb.init(
-                project ='dissertation',
+                project ='multitask-gp',
                 config={'learning_rate': lr, 'epochs': n_iter}
             )
         

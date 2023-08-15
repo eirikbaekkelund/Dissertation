@@ -1,8 +1,11 @@
 import torch
+import numpy as np
+import pandas as pd
 from torch.utils.data import Dataset
 from data.generator import PVWeatherGenerator
 from typing import Optional
 from data.utils import get_lat_lon_col_names
+from data.utils import train_test_split
 
 
 class PVDataLoader(Dataset):
@@ -105,3 +108,108 @@ class PVWeatherLoader(PVWeatherGenerator, Dataset):
     def __len__(self):
         return len(self.X)
     
+# designed to work with the PVWeatherGenerator dataframe 
+# also designed to run the experiment due to its train test split return
+
+class SystemLoader(Dataset):
+    def __init__(
+            self,
+            X : pd.DataFrame,
+            y : pd.DataFrame,
+            train_interval : int,
+            season : Optional[str] = None,
+    ):
+        super().__init__()
+        if season is not None:
+            assert season in ["winter", "summer", "spring", "fall"], \
+                            'season must be one of "winter", "summer", "spring", "fall"'
+            X = X[X["season"] == season]
+            y = y[X["season"] == season]
+            # drop season column
+            X = X.drop(columns=["season"], axis=1)
+        
+        # set task indices to the unique latitude and longitude pairs in X
+        task_indices = torch.ones(len(X), dtype=torch.long)
+        lat, lon = get_lat_lon_col_names(X)
+        unique_lat_lon = X[[lat, lon]].drop_duplicates().values
+        
+        for i, lat_lon in enumerate(unique_lat_lon):
+            task_indices[(X[lat] == lat_lon[0]) & (X[lon] == lat_lon[1])] = \
+            task_indices[(X[lat] == lat_lon[0]) & (X[lon] == lat_lon[1])] * i
+        
+        self.X = torch.tensor(X.values, dtype=torch.float64)
+        self.y = torch.tensor(y.values, dtype=torch.float64)
+        
+        self.tasks = task_indices
+        self.n_systems = len(unique_lat_lon)
+        self.train_interval = train_interval
+        
+        # index to start at
+        self.start = 0
+        self.end = self.train_interval
+    
+    def set_index(self):
+        self.start += self.train_interval
+        self.end = self.start + self.train_interval
+
+    def __len__(self):
+        return len(self.tasks[self.tasks == 0]) // self.train_interval
+    
+    def slice_data(self, i):
+        x = self.X[self.tasks == i][self.start:self.end]
+        t = self.tasks[self.tasks == i][self.start:self.end]
+        y = self.y[self.tasks == i][self.start:self.end]
+
+        return x, y, t
+
+    def train_test_split_region(self):
+        X_train, X_test = [], []
+        Y_train, Y_test = [], []
+        T_train, T_test = [], []
+
+        # get a random hour between 8 and 14
+        hour = np.random.randint(8, 14)
+        
+        for i in range(self.n_systems):
+            x, y, t = self.slice_data(i)
+           
+            x_train, y_train, x_test, y_test = train_test_split(X=x, y=y, hour=hour,n_hours=2)
+            n_tr, n_te = len(x_train), len(x_test)
+            task_train, task_test = t[:n_tr], t[n_tr:n_tr+n_te]
+
+            X_train.append(x_train)
+            Y_train.append(y_train)
+            T_train.append(task_train)
+            X_test.append(x_test)
+            Y_test.append(y_test)
+            T_test.append(task_test)
+
+        self.x_train = torch.cat(X_train, dim=0)
+        self.y_train = torch.cat(Y_train, dim=0)
+        self.task_train = torch.cat(T_train, dim=0)
+        
+        self.x_test = torch.cat(X_test, dim=0)
+        self.y_test = torch.cat(Y_test, dim=0)
+        self.task_test = torch.cat(T_test, dim=0)
+
+    
+    def train_test_split_individual(self, i):
+        x_train = self.x_train[self.task_train == i]
+        y_train = self.y_train[self.task_train == i]
+        x_test = self.x_test[self.task_test == i]
+        y_test = self.y_test[self.task_test == i]
+        
+        return x_train, y_train, x_test, y_test
+
+    def __getitem__(self, idx):
+       
+        self.train_test_split_region()
+
+        if idx == len(self) + 1:
+            # stop iteration at the end of the dataset
+            raise StopIteration
+        
+        self.set_index()
+
+        return self.x_train, self.y_train, self.x_test, \
+               self.y_test, self.task_train, self.task_test

@@ -705,7 +705,7 @@ def store_gp_module_parameters(model, n_digits=4, verbose=False):
                 )
                 print(f'Real value: {param.numpy().round(n_digits)}\n')
                 print('-' * 50)
-            param = param.reshape(1)
+            param = param.reshape(-1)
             param_dict[param_name] = param.numpy().round(n_digits)
             
     return param_dict
