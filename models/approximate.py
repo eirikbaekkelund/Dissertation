@@ -8,8 +8,6 @@ from models.variational import VariationalBase
 from data.utils import store_gp_module_parameters
 import wandb
 
-# TODO add parameter tracking
-
 class ApproximateGPBaseModel(ApproximateGP):
     """ 
     Base model for performing inference with a Gaussian Process (GP) using
@@ -35,12 +33,18 @@ class ApproximateGPBaseModel(ApproximateGP):
                  jitter : float = 1e-4,
                  learn_inducing_locations : bool = False
                  ):
-        
-        if isinstance(likelihood, gpytorch.likelihoods.BetaLikelihood):
-            assert y.min() >= 0 and y.max() <= 1, 'y must be in the range [0, 1] for Beta likelihood'
+     
+
+        assert y.min() >= 0 and y.max() <= 1, 'y must be in the range [0, 1] for Beta likelihood'
         assert X.size(0) == y.size(0), 'X and y must have same number of data points'
         
-        
+        # need to constrain y to (0, 1) for Beta likelihood
+        if y.min() == 0:
+            y[y == 0] += 1e-5
+
+        if y.max() == 1:
+            y[y==0] -= 1e-5
+
         self.X = X
         self.y = y
         self.config = config
@@ -48,11 +52,11 @@ class ApproximateGPBaseModel(ApproximateGP):
         
         variational_distribution = VariationalBase(config).variational_distribution
         variational_strategy = VariationalStrategy(self, 
-                                                   inducing_points=X, 
-                                                   variational_distribution=variational_distribution,
-                                                   learn_inducing_locations=learn_inducing_locations,
-                                                   jitter_val=jitter) 
-        variational_strategy.num_tasks = y.size(1) if len(y.size()) > 1 else 1
+                                inducing_points=X, 
+                                variational_distribution=variational_distribution,
+                                learn_inducing_locations=learn_inducing_locations,
+                                jitter_val=jitter
+        ) 
         
         super(ApproximateGPBaseModel, self).__init__(variational_strategy)
         
@@ -99,7 +103,8 @@ class ApproximateGPBaseModel(ApproximateGP):
             n_iter : int, 
             lr : float,
             verbose : bool = True,
-            use_wandb : bool = False):
+            use_wandb : bool = False,
+            objective = 'elbo'):
         """
         Train the GP model using SVI
 
@@ -110,6 +115,7 @@ class ApproximateGPBaseModel(ApproximateGP):
             device (torch.device): device to train on
             verbose (bool): whether to print training progress
         """        
+        assert objective in ['elbo', 'pred_log'], 'objective must be one of: elbo, pred_log'
         self.train()
         self.likelihood.train()
 
@@ -134,7 +140,12 @@ class ApproximateGPBaseModel(ApproximateGP):
         
 
         optimizer = torch.optim.Adam(self.parameters(), lr=lr)
-        elbo = gpytorch.mlls.VariationalELBO(likelihood=self.likelihood, 
+        if objective == 'pred_log':
+            mll = gpytorch.mlls.PredictiveLogLikelihood(likelihood=self.likelihood, 
+                                                         model=self, 
+                                                         num_data=self.y.size(0))
+        else:
+            mll = gpytorch.mlls.VariationalELBO(likelihood=self.likelihood, 
                                             model=self, 
                                             num_data=self.y.size(0))
         
@@ -150,7 +161,7 @@ class ApproximateGPBaseModel(ApproximateGP):
                 optimizer.zero_grad()
             
             output = self(self.X)
-            loss = -elbo(output, self.y)
+            loss= -mll(output, self.y)
             loss.backward()
             
             losses.append(loss.item())
@@ -192,7 +203,7 @@ class ApproximateGPBaseModel(ApproximateGP):
         Returns:
             torch.Tensor: posterior mean
         """
-        return samples.mean(axis=0)
+        return samples.mean(axis=0).mean(axis=0)
     
     def predict_median(self, samples):
         """ 
@@ -204,7 +215,7 @@ class ApproximateGPBaseModel(ApproximateGP):
         Returns:
             torch.Tensor: posterior median from MC samples
         """
-        return samples.median(axis=0).values
+        return samples.median(axis=0).values.mean(axis=0)
 
     def predict_mode(self):
         """ 
@@ -261,17 +272,19 @@ class ApproximateGPBaseModel(ApproximateGP):
         
         with torch.no_grad():
             
-            # MC samples for non-Gaussian likelihoods
+            # MC samples for non-Gaussian likelihoods approximates the marginal likelihood
             if not isinstance(self.likelihood, gpytorch.likelihoods.GaussianLikelihood):
-                with gpytorch.settings.num_likelihood_samples(30):
-                    # get posterior predictive distribution
+                with gpytorch.settings.num_likelihood_samples(100):
+                    # get approximate marginal likelihood
                     preds = self.likelihood(self(x)) 
                     
                     if pred_type == 'dist':
                         return preds
                     # samples from the posterior predictive distribution
-                    samples = preds.sample(sample_shape=torch.Size([30]))
+                    samples = preds.sample(sample_shape=torch.Size([100]))
                     lower, upper = self.confidence_region(samples)
+                    lower = lower.mean(axis=0)
+                    upper = upper.mean(axis=0)
 
                     if pred_type == 'median':
                         median = self.predict_median(samples)
@@ -291,7 +304,7 @@ class ApproximateGPBaseModel(ApproximateGP):
                         mode = self.predict_mode()
                         return median, mean, mode, lower, upper
 
-            # Closed form for Gaussian likelihoods
+            # Gaussian likelihoods
             else:
                 return self.likelihood(self(x))
             

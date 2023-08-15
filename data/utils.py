@@ -157,7 +157,7 @@ def daily_production(df_pv, day_min, day_max):
     start_night = datetime.time(day_max, 0)
     end_night = datetime.time(day_min, 0)
 
-    day_index = [time_period for time_period in df_pv.index if time_period.time() < start_night and time_period.time() >= end_night]
+    day_index = [time_period for time_period in df_pv.index if time_period.time() <= start_night and time_period.time() >= end_night]
 
     df_pv = df_pv.loc[day_index]
 
@@ -311,13 +311,15 @@ def find_nearby_systems_poly(df_location, c1, c2, c3, c4):
 
     for _, row in unique_coords.iterrows():
         lat, lon = row[lat_col], row[lon_col]
-        df = df_location[(df_location['latitude'] == lat) & (df_location['longitude'] == lon)]
         
-        df_list.append(df)
+        if polygon.contains(Point(lat, lon)):
+            df = df_location[(df_location[lat_col] == lat) & (df_location[lon_col] == lon)]
+            df_list.append(df)
 
     nearby_systems = pd.concat(df_list)
 
     return nearby_systems
+
 def stack_dataframe(df_pv, lats_map, longs_map):
     """
     Stacking data frame to include geospatial data
@@ -493,7 +495,7 @@ def start_end_index(day_min, day_max, minute_interval, n_days, day_init):
     n_points= int(n_daily_points * n_days)
     
     start_idx = int(n_daily_points * day_init)
-    end_idx = int(day_init + n_points)
+    end_idx = int(start_idx + n_points)
 
     return start_idx, end_idx
 
@@ -501,6 +503,8 @@ def prediction_index(hour, hourly_points, day_max, n_hours):
     """ 
     Get the index of the first data point to predict and
     the index of the last data point to predict.
+    
+    !Note that it is negative indexing!
 
     Args:
         hour (int): hour of the day
@@ -539,6 +543,10 @@ def assign_month_and_season(df):
 
 def filter_by_season(df, season):
     assert 'datetime' in df.columns, 'datetime column not found'
+    # ignore SettingWithCopyWarning
+    import warnings
+    warnings.filterwarnings("ignore")
+    
     df = assign_month_and_season(df)
     df = df[df['season'] == season]
     df.drop('season', axis=1, inplace=True)
@@ -575,12 +583,9 @@ def train_test_split(X, y, hour, minute_interval=5, day_min=8, day_max=16, n_hou
     y_train = y[:-start_idx]
     y_test = y[-start_idx:-end_idx]
 
-    if len(X.shape) == 1:
-        X_train = X[:-start_idx]
-        X_test = X[-start_idx:-end_idx]
-    else:
-        X_train = X[:-start_idx, :]
-        X_test = X[-start_idx:-end_idx, :]
+    X_train = X[:-start_idx]
+    X_test = X[-start_idx:-end_idx]
+
 
     if torch.cuda.is_available():
         return X_train.cuda(), y_train.cuda(), X_test.cuda(), y_test.cuda()
@@ -604,7 +609,7 @@ def cross_val_fold(X, y, n_days, daily_points):
     """
     interval = int(n_days * daily_points)
    
-    x_list = [X[i:i+interval, :] if len(X.shape) > 1 else X[i:i+interval] 
+    x_list = [torch.linspace(0, 120, len(X[i:i+interval]))
               for i in range(0, len(X), interval)]
     
     y_list = [y[i:i+interval] for i in range(0, len(y), interval)]
@@ -700,13 +705,13 @@ def store_gp_module_parameters(model, n_digits=4, verbose=False):
                 )
                 print(f'Real value: {param.numpy().round(n_digits)}\n')
                 print('-' * 50)
-            param = param.reshape(1)
+            param = param.reshape(-1)
             param_dict[param_name] = param.numpy().round(n_digits)
             
     return param_dict
 
 # THESE ARE HARD CODED FOR LOCAL MACHINE TO UPLOAD AND SAVE FILES
-# WOULD NEED TO CHANGE FOR REMOTE / DIFFERENT MACHINE
+# WOULD NEED TO CHANGE FOR DIFFERENT SETUPS
 
 def preprocess_weather(df):
     """ 
@@ -785,11 +790,31 @@ def merge_weather_and_pv(df_weather, df_pv):
         # drop nan values if any by row
         merged_df = merged_df.dropna(axis=0)
         merged_dataframes.append(merged_df)
-        print(merged_df.shape)
 
     # Concatenate all the merged data frames into a single data frame
     final_merged_df = pd.concat(merged_dataframes, ignore_index=True)
     
     return final_merged_df
 
+
+def check_model_inputs(x_train, y_train, x_test, y_test):
+    for i in range(y_train.shape[-1] - 1):
+        if (torch.sum(y_train[:,i] == y_train[0,i]) == y_train.shape[0]):
+            print(f'column {i} is constant')
+            # remove column from y_train and y_test
+            y_train = torch.cat([y_train[:,:i], y_train[:,i+1:]], dim=-1)
+            y_test = torch.cat([y_test[:,:i], y_test[:,i+1:]], dim=-1)
+        
+    # remove rows with nan values
+    if torch.isnan(y_train).any():
+        y_train = y_train[~torch.any(y_train.isnan(),dim=1)]
+        x_train = x_train[:y_train.shape[0]]
+        
+    if y_train.shape[0] <= 250:
+        print(f'skipping this iteration, min obs is violated for Exp smoothing')
+        return None, None, None, None
+    elif len(y_train.shape) == 1:
+        return None, None, None, None
+    
+    return x_train, y_train, x_test, y_test
 

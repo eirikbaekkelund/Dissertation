@@ -39,11 +39,12 @@ class MultitaskGPModel(ApproximateGP):
                                     inducing_points=X, 
                                     variational_distribution=variational_distribution, 
                                     learn_inducing_locations=learn_inducing_locations,
-                                   # jitter_val=jitter
+                                    jitter_val=jitter
                                 ),
                             num_tasks=num_tasks,
                             num_latents=num_latents,
-                            latent_dim=-1
+                            latent_dim=-1,
+                            jitter_val=jitter
                         )
         
         super().__init__(variational_strategy)
@@ -74,7 +75,7 @@ class MultitaskGPModel(ApproximateGP):
 
         if use_wandb:
             wandb.init(
-                project ='dissertation',
+                project ='multitask-gp',
                 config={'learning_rate': lr, 'epochs': n_iter}
             )
         

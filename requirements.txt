@@ -4,3 +4,5 @@ numpy = 1.19.5
 statsmodels = 0.12.2
 torchdiffeq = 0.2.0
 alfi = 1.0.0
+xarray=0.20.1
+shapely=2.0.1

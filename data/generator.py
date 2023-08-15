@@ -1,7 +1,6 @@
 import torch
 from data.utils import *
 from typing import Optional
-from torch.utils.data import Dataset
 
 class PVDataGenerator:
     """
@@ -50,7 +49,8 @@ class PVDataGenerator:
             assert len(coords) == 2, 'coords must be a tuple of length 2 when using circle method'
         else:
             assert len(coords) == 4, 'coords must be a tuple of length 4 when using poly method'
-
+        if season is not None:
+            assert season in ['winter', 'spring', 'summer', 'fall'], 'season must be one of winter, spring, summer, autumn'
         # load data
         df_pv = load_data(folder_name=folder_name, file_name=file_name_pv)
         df_location = load_data(folder_name=folder_name, file_name=file_name_location)
@@ -78,11 +78,11 @@ class PVDataGenerator:
 
         with pd.option_context('mode.chained_assignment', None):
             pv_series['datetime'] = date_time
+        
         # update index of pv_series
-
-        if season is not None:
+        if season is not None: 
             pv_series = filter_by_season(df=pv_series, season=season)
-
+            
         start_idx, end_idx = start_end_index(day_min=day_min, 
                                              day_max=day_max, 
                                              minute_interval=minute_interval, 
@@ -90,7 +90,9 @@ class PVDataGenerator:
                                              day_init=day_init)
 
         # get relevant sample of pv series
+        date_time = pv_series['datetime'].iloc[start_idx:end_idx]
         pv_series = pv_series.iloc[start_idx:end_idx, :n_systems]
+        pv_series['datetime'] = date_time
 
         # create stack of all systems
         pv_series = stack_dataframe(df_pv=pv_series, lats_map=lats, longs_map=longs)
@@ -162,7 +164,7 @@ class PVWeatherGenerator:
                  day_init : int = 0,
                  n_systems : int = 15, 
                  n_days : int = 5,
-                 minute_interval : int = 60,
+                 minute_interval : int = 5,
                  day_min : int = 8, 
                  day_max : int = 15,
                  folder_name : str = 'pv_data',
@@ -182,7 +184,7 @@ class PVWeatherGenerator:
         if distance_method == 'circle':
             assert radius > 0, 'radius must be greater than 0'
             assert len(coords) == 2, 'coords must be a tuple of length 2 when using circle method'
-        else:
+        elif distance_method == 'poly':
             assert len(coords) == 4, 'coords must be a tuple of length 4 when using poly method'
         
         df = load_data(folder_name=folder_name, file_name=file_name)
@@ -200,14 +202,14 @@ class PVWeatherGenerator:
         elif distance_method == 'poly':
             df = find_nearby_systems_poly(df, *coords)
       
-        
-        # TODO need to create iterator by saving the length of each individual system
-        # and iterating will give the X and y values for each system 
-
         lat_col, lon_col = get_lat_lon_col_names(df)
         
         self.unique_lat_lon = df[[lat_col, lon_col]].drop_duplicates()
+        self.unique_lat_lon = self.unique_lat_lon[:n_systems]
+        
+        df = df[df[lat_col].isin(self.unique_lat_lon[lat_col]) & df[lon_col].isin(self.unique_lat_lon[lon_col])]
         self.df = df.copy()
+    
         self.start_idx, self.end_idx = start_end_index(
                                         day_init=day_init,
                                         day_min=day_min, 

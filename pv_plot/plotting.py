@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import seaborn as sns
 import numpy as np
 import torch
 import gpytorch
@@ -70,7 +71,7 @@ def plot_grid(df, coords, radius=1, distance_method='circle'):
 
     plt.show()
 
-def plot_train_test_split(y_train, y_test):
+def plot_train_test_split(y_train, y_test, minute_interval=5):
     """ 
     Plot the train-test split of the data
 
@@ -99,7 +100,7 @@ def plot_train_test_split(y_train, y_test):
                 color='black', 
                 linestyle='--')
 
-    plt.xlabel('Time (5 min intervals between 8am and 4pm)', fontsize=13)
+    plt.xlabel(f'Time ({minute_interval} min intervals between 8am and 4pm)', fontsize=13)
     plt.ylabel('PV Production (0-1 Scale)', fontsize=13)
 
     plt.ylim(-0.01, 1.001)
@@ -215,7 +216,7 @@ def plot_gp(model : gpytorch.models.GP,
     # time points for the training and test data
     time_train = torch.arange(0, len(y_train))
     time_test = torch.arange(len(y_train), len(y_train) + len(y_test))
-    
+    plt.rcParams['font.family'] = 'Arial'
     plt.figure(figsize=(20, 8))
 
     def plot_observed_data():
@@ -471,7 +472,9 @@ def plot_gp_ax(model, x_train, x_test, y_train, y_test, pred_type='mode', title=
 
 
 def plot_alpha_beta(model):
+    
     fig, ax = plt.subplots(figsize=(15, 6), sharey=False)
+    plt.rcParams['font.family'] = 'Arial'
     time = torch.arange(0, len(model.likelihood.alpha.mean(axis=0)))
 
     ax.scatter(time, model.likelihood.beta.mean(axis=0), label='Beta', color='b', alpha=0.2)
@@ -486,4 +489,73 @@ def plot_alpha_beta(model):
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax2.legend(lines + lines2, labels + labels2, loc='upper right')
 
+    plt.show()
+
+def boxplot_forecast_horizon(df_dict, pred_points=24, season : Optional[str] = None):
+    
+    fig, ax = plt.subplots(len(df_dict) //2 , 2, figsize=(30, 20), sharey=True, sharex=True)
+    plt.rcParams.update({'font.family': 'Arial'})
+    ax = ax.flatten()
+    
+    for i,  (key, df) in enumerate(df_dict.items()):
+        df_transposed = df.T
+        # boxplot the data with no fill but with a line at the median
+        sns.boxplot(data=df_transposed, ax=ax[i], showfliers=False, medianprops={'color':'red'}, showmeans=True, color='white')
+        ax[i].set_title(key, fontsize=20)
+        # set y axis label on leftmost plots
+        if i % 2 == 0:
+            ax[i].set_ylabel('MAE Errors', fontsize=15)
+            # set ticksizes
+            ax[i].tick_params(axis='both', which='major', labelsize=15)
+        # set x axis label on bottom plots
+        if i >= len(df_dict) - 2:
+            ax[i].set_xlabel('Time Step', fontsize=20)
+            # set ticks to be from 1 to number of time steps
+            # and let 1 be where the 0 is
+            ax[i].set_xticks(np.arange(0, pred_points), np.arange(1, pred_points + 1))
+            ax[i].tick_params(axis='both', which='major', labelsize=15)
+
+    if season is not None:
+        title = season[0].upper() + season[1:]
+        fig.suptitle(title, fontsize=25)
+
+    plt.tight_layout()
+    plt.show();
+
+def boxplot_models(results : dict, season : Optional[str] = None):
+    # boxplot of models MAE (mean and median)
+    
+    plt.figure(figsize=(15, 7))
+    plt.rcParams.update({'font.family': 'Arial'})
+    plt.boxplot([results[key]['mean'] for key in results.keys()], labels=results.keys(), showmeans=True)
+    plt.ylabel('Mean MAE')
+
+    if season is not None:
+        title = season[0].upper() + season[1:]
+        plt.title(title)
+    plt.tight_layout()
+    plt.show();
+
+def plot_forecast_mae(results : dict, season : Optional[str] = None, pred_points=24):
+    colors = ['r', 'g', 'b', 'y', 'm', 'c', 'k', 'w']
+    linestyles = ['-', '--', '-.', ':', '-', '--', '-.', ':']
+    
+
+    plt.figure(figsize=(15, 7))
+    plt.rcParams.update({'font.family': 'Arial'})
+    
+    for i, key in enumerate(results.keys()):
+        mean = results[key]['mean']
+        plt.plot(np.arange(0, pred_points), mean, color=colors[i], linestyle=linestyles[i], label=key)
+    
+    plt.xlabel('Forecasting Steps Ahead (5 min Intervals)')
+    plt.ylabel('Mean MAE')
+    plt.xticks(np.arange(0, pred_points), np.arange(1, pred_points + 1))
+
+    if season is not None:
+        title = season[0].upper() + season[1:]
+        plt.title(title)
+    
+    plt.legend()
+    plt.tight_layout()
     plt.show()

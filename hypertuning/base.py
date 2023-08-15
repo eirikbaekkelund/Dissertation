@@ -37,7 +37,7 @@ class HyperOptBase(ABC):
         """
         best_params = self.study.best_params
         best_params['opt_name'] = opt_name
-        torch.save(best_params, f'best_params/{opt_name}.txt')
+        torch.save(best_params, f'best_params_{opt_name}.txt')
     
     def sample_train_config(self, trial : optuna.trial.Trial):
         """

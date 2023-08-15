@@ -14,6 +14,7 @@ class BetaLikelihood_MeanParametrization(gpytorch.likelihoods.BetaLikelihood):
                  correcting_scale  : Optional[float] = 1,
                  correcting_scale_lower_bound : Optional[float] = 0.1,
                  correcting_scale_upper_bound : Optional[float] = 0.9,
+                 correcting_scale_grad : Optional[bool] = False,
                  *args, **kwargs):
         
         super().__init__(*args, **kwargs)
@@ -24,11 +25,13 @@ class BetaLikelihood_MeanParametrization(gpytorch.likelihoods.BetaLikelihood):
         assert 0 <= correcting_scale_upper_bound <= 1, 'upper bound must be in [0, 1]'
         assert correcting_scale_lower_bound < correcting_scale_upper_bound, 'lower bound must be smaller than upper bound'
         
-        self.scale = scale        
-        self.correcting_scale = Parameter(torch.tensor(correcting_scale, dtype=torch.float64), 
-                                            requires_grad=False)
-
-    
+        self.scale = scale 
+        # can set grad to True if we want to impose a correction on the scale parameter
+        # in regions where there is a higher noise level
+        if correcting_scale_grad:
+            self.correcting_scale = Parameter(torch.tensor(correcting_scale, dtype=torch.float64), 
+                                              requires_grad=correcting_scale_grad)       
+       
     def forward(self, function_samples, *args, **kwargs):
         
         mixture = torch.distributions.Normal(0, 1).cdf(function_samples)
@@ -36,13 +39,10 @@ class BetaLikelihood_MeanParametrization(gpytorch.likelihoods.BetaLikelihood):
         self.alpha = mixture * self.scale 
         self.beta = self.scale - self.alpha 
 
-        # self.alpha = torch.where((mixture > self.correcting_scale_lower_bound) | 
-        #                          (mixture < self.correcting_scale_upper_bound), 
-        #                          self.correcting_scale * alpha, alpha)
-        
-        # self.beta = torch.where((mixture > self.correcting_scale_lower_bound) | 
-        #                         (mixture < self.correcting_scale_upper_bound), 
-        #                         self.correcting_scale * beta, beta)
+        # apply correction to the scale parameter if passed
+        if hasattr(self, 'correcting_scale'):
+            pass 
+            # see previous version of this file for the implementation of the correction
         
         self.alpha = torch.clamp(self.alpha, 1e-10, 1e10)
         self.beta = torch.clamp(self.beta, 1e-10, 1e10)
@@ -94,7 +94,7 @@ class MultitaskBetaLikelihood(BetaLikelihood_MeanParametrization):
         if scale_constraint is None:
             scale_constraint = Positive()
 
-        self.raw_scale = torch.nn.Parameter(torch.ones(*batch_shape, 1, num_tasks))
+        self.raw_scale = torch.nn.Parameter(torch.ones(*batch_shape, 1, num_tasks) * scale)
         if scale_prior is not None:
             self.register_prior("scale_prior", scale_prior, lambda m: m.scale, lambda m, v: m._set_scale(v))
 
@@ -102,6 +102,43 @@ class MultitaskBetaLikelihood(BetaLikelihood_MeanParametrization):
 
     def expected_log_prob(self, observations, function_dist, *args, **kwargs):
         ret = super().expected_log_prob(observations, function_dist, *args, **kwargs)
+        
+        num_event_dim = len(function_dist.event_shape)
+        
+        if num_event_dim > 1:  # Do appropriate summation for multitask likelihood
+            ret = ret.sum(list(range(-1, -num_event_dim, -1)))
+        return ret
+
+class HadamardBetaLikelihood(MultitaskBetaLikelihood):
+    
+    def forward(self, function_samples, *args, **kwargs):
+        assert 'task_indices' in kwargs.keys(), 'task_indices must be passed as a keyword argument'
+        mixture = torch.distributions.Normal(0, 1).cdf(function_samples)
+
+        task_indices = kwargs['task_indices']
+        
+        if self.scale.shape[-1]> 1:
+            alpha_mask = torch.zeros_like(mixture)
+            beta_mask = torch.zeros_like(mixture)
+        
+            for idx in torch.unique(task_indices):
+                alpha_mask[:,task_indices == idx] = self.scale[:,idx] * mixture[:,task_indices == idx]
+                beta_mask[:,task_indices == idx] = self.scale[:,idx] - alpha_mask[:,task_indices == idx]
+            
+            self.alpha = alpha_mask
+            self.beta = beta_mask
+        else:
+            self.alpha = self.scale * mixture
+            self.beta = self.scale - self.alpha
+        
+        self.alpha = torch.clamp(self.alpha, 1e-10, 1e10)
+        self.beta = torch.clamp(self.beta, 1e-10, 1e10)
+
+        return base_distributions.Beta(concentration1=self.alpha, concentration0=self.beta)
+
+    def expected_log_prob(self, observations, function_dist, *args, **kwargs):
+        log_prob_lambda = lambda function_samples: self.forward(function_samples, *args, **kwargs).log_prob(observations)
+        ret = self.quadrature(log_prob_lambda, function_dist)
         
         num_event_dim = len(function_dist.event_shape)
         
