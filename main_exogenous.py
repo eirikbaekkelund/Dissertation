@@ -6,7 +6,6 @@ from models import (ApproximateGPBaseModel,
                     fit_xgboost)
 from likelihoods import BetaLikelihood_MeanParametrization, HadamardBetaLikelihood
 from data import SystemLoader, PVWeatherGenerator
-from data.utils import train_test_split
 
 
 if __name__ == "__main__":
