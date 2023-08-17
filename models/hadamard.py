@@ -61,28 +61,20 @@ class HadamardGPModel(gpytorch.models.ApproximateGP):
         else:
             inducing_points = X
         
-        if torch.backends.mps.is_available():
-            inducing_points.to('mps')
+        # if torch.backends.mps.is_available():
+        #     inducing_points.to('mps')
         
         if num_latents is not None:
             assert num_latents > 1, "Must specify num_latents > 1 when using LMC"
           
-            variational_strategy = self.get_strategy(
-                variational_type=variational_type,
-                inducing_points=inducing_points,
-                num_tasks=num_tasks,
-                num_latents=num_latents,
-                jitter=jitter
-            )
-        else:
-            variational_strategy = self.get_strategy(
-                variational_type=variational_type,
-                inducing_points=inducing_points,
-                num_tasks=num_tasks,
-                jitter=jitter
-            )
-            
-
+        variational_strategy = self.get_strategy(
+            variational_type=variational_type,
+            inducing_points=inducing_points,
+            num_tasks=num_tasks,
+            num_latents=num_latents,
+            jitter=jitter
+        )
+        
         super().__init__(variational_strategy)
         
         self.X = X
@@ -90,7 +82,8 @@ class HadamardGPModel(gpytorch.models.ApproximateGP):
         self.mean_module = mean_module
         self.covar_module = covar_module
         self.likelihood = likelihood
-        self.variational_type = variational_type        
+        self.variational_type = variational_type
+        self.num_tasks = num_tasks
 
     def forward(self, x):
      
@@ -212,6 +205,8 @@ class HadamardGPModel(gpytorch.models.ApproximateGP):
                 num_latents=num_latents,
                 jitter_val=jitter
             )
+        else:
+            raise ValueError("num_latents must be greater than 1 if LMC otherwise num_latents must be None")
     
     def train_full(self,
         n_iter : int,
@@ -226,7 +221,7 @@ class HadamardGPModel(gpytorch.models.ApproximateGP):
         """
    
         print_freq = 10
-        # TODO natural gradients
+
         for i in range(n_iter):
             # zero grad all optimizers in optimizer list
             [opt.zero_grad() for opt in optimizer]
@@ -289,7 +284,7 @@ class HadamardGPModel(gpytorch.models.ApproximateGP):
     ):
         self.train()
         self.likelihood.train()
-        
+        # use natural gradients if tril_natural or natural
         if self.variational_type in ['tril_natural', 'natural']:
             optimizer = [gpytorch.optim.NGD(self.variational_parameters(), num_data=self.y.size(0), lr=lr),
                          torch.optim.Adam(self.parameters(), lr=lr*0.1)]
@@ -314,7 +309,23 @@ class HadamardGPModel(gpytorch.models.ApproximateGP):
         
         if use_wandb:
             wandb.finish()
+    
+    def get_i_prediction(self, i, task_indices):
+        assert i < self.num_tasks, "i must be less than the number of tasks"
+        if not hasattr(self, 'y_pred'):
+            raise ValueError("y_pred must be computed before calling predict_i. Call predict() first.")
 
+        return (self.y_pred[task_indices == i], 
+               self.lower[task_indices == i], 
+               self.upper[task_indices == i])
+    
+    def predict_dist(self):
+        # check that y_pred has been computed
+        if not hasattr(self, 'y_pred'):
+            raise ValueError("y_pred must be computed before calling predict_i. Call predict() first.")
+        
+        return self.dist
+    
     def predict(self, 
         x : torch.Tensor, 
         task_indices : torch.Tensor,
@@ -324,25 +335,34 @@ class HadamardGPModel(gpytorch.models.ApproximateGP):
         self.likelihood.eval()
         
         with torch.no_grad():
-            preds = self.likelihood(self(x, task_indices=task_indices), task_indices=task_indices)
-            samples = preds.sample(sample_shape=torch.Size([num_samples]))
+            self.dist = self.likelihood(self(x, task_indices=task_indices), task_indices=task_indices)
         
-        y_pred = torch.zeros(x.size(0), task_indices.max() + 1, device=x.device)
-        lower = torch.zeros(x.size(0), task_indices.max() + 1, device=x.device)
-        upper = torch.zeros(x.size(0), task_indices.max() + 1, device=x.device)
-        
+        samples = self.dist.sample(sample_shape=torch.Size([num_samples]))
+
         for idx in torch.unique(task_indices):
-            
+            # slice samples by task
             samples_idx = samples[:,:, task_indices == idx]
-            y_pred_idx = samples_idx.mean(dim=0).median(dim=0).values
+
+            # get MC estimate of mean and variance
+            y_pred_idx = samples_idx.median(dim=0).values.mean(dim=0)
             lower_idx = np.quantile(samples_idx.numpy(), 0.025, axis=0).mean(axis=0)
             upper_idx = np.quantile(samples_idx.numpy(), 0.975, axis=0).mean(axis=0)
             
-            y_pred[:, idx] = y_pred_idx
-            lower[:, idx] = lower_idx
-            upper[:, idx] = upper_idx
+            # get all the predictions in the same order as the input
+            if idx == 0:
+                y_pred = y_pred_idx
+                lower = lower_idx
+                upper = upper_idx
+            else:
+                y_pred = np.concatenate((y_pred, y_pred_idx), axis=-1)
+                lower = np.concatenate((lower, lower_idx), axis=-1)
+                upper = np.concatenate((upper, upper_idx), axis=-1)
         
-        return y_pred, lower, upper
+        self.y_pred = y_pred
+        self.lower = lower
+        self.upper = upper
+        
+        return self.y_pred, self.lower, self.upper
     
     def set_gpu(self):
         """
@@ -375,5 +395,3 @@ class HadamardGPModel(gpytorch.models.ApproximateGP):
         
 
     
-    
-

@@ -97,10 +97,11 @@ def get_mean_covar(num_latent : int = 1):
     kernel = Kernel(num_latent=num_latent)
     matern_base = kernel.get_matern(lengthscale_constraint=Positive(),
                                     outputscale_constraint=Positive())
-    matern_quasi = kernel.get_matern(lengthscale_constraint=Interval(0.3, 1000.0),
+    matern_quasi = kernel.get_matern(lengthscale_constraint=Positive(initial_value=1000),
                                     outputscale_constraint=Positive())
-    periodic1 = kernel.get_periodic(lengthscale_constraint= Positive(),
-                                    outputscale_constraint=Positive())
+    periodic1 = kernel.get_periodic(outputscale_constraint=Positive(),
+                                    periodic_constraint=Positive(),
+                                    lengthscale_constraint=Positive())
 
     covar = kernel.get_quasi_periodic(matern_base=matern_base, 
                                         matern_quasi=matern_quasi,
@@ -126,12 +127,12 @@ def get_mean_covar_weather(
     assert combine in ['product', 'sum'], "combine must be either 'product' or 'sum'"
 
     mean, covar_t = get_mean_covar(num_latent=num_latents)
-    covar_w = ScaleKernel(RBFKernel(batch_shape=torch.Size([num_latents])))
-    covar_t = ScaleKernel(covar_t)
+    covar_w = ScaleKernel(RBFKernel(batch_shape=torch.Size([num_latents]),
+                          lengthscale_constraint=Positive(initial_value=3)))
     
     # set active dimension based on exogenous part and temporal part
     covar_w.active_dims = torch.tensor([i for i in range(d-1)])
-    covar_t.active_dims = torch.tensor([d -1])
+    covar_t.active_dims = torch.tensor([d-1])
 
     if combine == 'sum':
         return mean, AdditiveKernel(covar_w, covar_t)

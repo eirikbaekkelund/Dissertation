@@ -6,6 +6,7 @@ from data.generator import PVWeatherGenerator
 from typing import Optional
 from data.utils import get_lat_lon_col_names
 from data.utils import train_test_split
+from scipy.signal import savgol_filter
 
 
 class PVDataLoader(Dataset):
@@ -48,8 +49,7 @@ class PVWeatherLoader(PVWeatherGenerator, Dataset):
                  drop_nan : bool = True,
                  x_cols : Optional[list] =['global_rad:W', 'diffuse_rad:W',
                                             'effective_cloud_cover:octas',
-                                            'relative_humidity_2m:p', 't_2m:C',
-                                            'wind_speed_10m:ms'],
+                                            'relative_humidity_2m:p', 't_2m:C'],
                  y_col : Optional[str] ='PV'
                 ):
         
@@ -114,31 +114,35 @@ class PVWeatherLoader(PVWeatherGenerator, Dataset):
 class SystemLoader(Dataset):
     def __init__(
             self,
-            X : pd.DataFrame,
-            y : pd.DataFrame,
+            df : pd.DataFrame,
+            # X : pd.DataFrame,
+            # y : pd.DataFrame,
             train_interval : int,
+            x_cols : Optional[list] =['global_rad:W', 
+                                      'diffuse_rad:W', 
+                                      'effective_cloud_cover:octas',
+                                      'relative_humidity_2m:p', 't_2m:C'],
             season : Optional[str] = None,
     ):
         super().__init__()
         if season is not None:
             assert season in ["winter", "summer", "spring", "fall"], \
                             'season must be one of "winter", "summer", "spring", "fall"'
-            X = X[X["season"] == season]
-            y = y[X["season"] == season]
+            df = df[df["season"] == season]
             # drop season column
-            X = X.drop(columns=["season"], axis=1)
+            df = df.drop(columns=["season"], axis=1)
         
         # set task indices to the unique latitude and longitude pairs in X
-        task_indices = torch.ones(len(X), dtype=torch.long)
-        lat, lon = get_lat_lon_col_names(X)
-        unique_lat_lon = X[[lat, lon]].drop_duplicates().values
+        task_indices = torch.ones(len(df), dtype=torch.long)
+        lat, lon = get_lat_lon_col_names(df)
+        unique_lat_lon = df[[lat, lon]].drop_duplicates().values
         
         for i, lat_lon in enumerate(unique_lat_lon):
-            task_indices[(X[lat] == lat_lon[0]) & (X[lon] == lat_lon[1])] = \
-            task_indices[(X[lat] == lat_lon[0]) & (X[lon] == lat_lon[1])] * i
+            task_indices[(df[lat] == lat_lon[0]) & (df[lon] == lat_lon[1])] = \
+            task_indices[(df[lat] == lat_lon[0]) & (df[lon] == lat_lon[1])] * i
         
-        self.X = torch.tensor(X.values, dtype=torch.float64)
-        self.y = torch.tensor(y.values, dtype=torch.float64)
+        self.X = torch.tensor(df[x_cols].values, dtype=torch.float64)
+        self.y = torch.tensor(df['PV'].values, dtype=torch.float64)
         
         self.tasks = task_indices
         self.n_systems = len(unique_lat_lon)
@@ -157,10 +161,20 @@ class SystemLoader(Dataset):
     
     def slice_data(self, i):
         x = self.X[self.tasks == i][self.start:self.end]
+        # normalize x
+        for j in range(x.shape[1]):
+            x[:, j] = (x[:, j] - x[:, j].mean()) / x[:, j].std()
+        
+        time_dim_x = torch.linspace(0, 1, x.shape[0], dtype=torch.float64)
+        x = torch.cat((x, time_dim_x.unsqueeze(1)), dim=-1)
+    
         t = self.tasks[self.tasks == i][self.start:self.end]
         y = self.y[self.tasks == i][self.start:self.end]
 
-        return x, y, t
+        
+
+        return x.float(), y, t
+    
 
     def train_test_split_region(self):
         X_train, X_test = [], []
@@ -173,9 +187,17 @@ class SystemLoader(Dataset):
         for i in range(self.n_systems):
             x, y, t = self.slice_data(i)
            
-            x_train, y_train, x_test, y_test = train_test_split(X=x, y=y, hour=hour,n_hours=2)
+            x_train, y_train, x_test, y_test = train_test_split(X=x, y=y, hour=hour,n_hours=6)
             n_tr, n_te = len(x_train), len(x_test)
             task_train, task_test = t[:n_tr], t[n_tr:n_tr+n_te]
+
+            # run savgol filter on input data except time dimension
+            x_train[:, :-1] = torch.tensor(savgol_filter(x_train[:, :-1], 
+                                                window_length=12, polyorder=3, axis=0), 
+                                            dtype=torch.float32)
+            x_test[:, :-1] = torch.tensor(savgol_filter(x_test[:, :-1], 
+                                            window_length=12, polyorder=3, axis=0), 
+                                        dtype=torch.float32)
 
             X_train.append(x_train)
             Y_train.append(y_train)
@@ -205,8 +227,10 @@ class SystemLoader(Dataset):
        
         self.train_test_split_region()
 
-        if idx == len(self) + 1:
+        if idx == len(self):
             # stop iteration at the end of the dataset
+            raise StopIteration
+        elif self.x_train.shape[0] == 0:
             raise StopIteration
         
         self.set_index()

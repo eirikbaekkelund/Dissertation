@@ -44,8 +44,8 @@ def load_data(folder_name, file_name):
     
     tic = time.time()
     
-    if file_name.endswith('.csv'):
-        df = pd.read_csv(file_path)    
+    if file_name.endswith('.csv'):        
+        df = pd.read_csv(file_path, low_memory=False)
     
     elif  file_name.endswith('.netcdf'):
         df = xr.open_dataset(file_path, engine='h5netcdf').to_dataframe()

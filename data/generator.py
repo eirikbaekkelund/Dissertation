@@ -1,6 +1,7 @@
 import torch
 from data.utils import *
 from typing import Optional
+from scipy.signal import savgol_filter
 
 class PVDataGenerator:
     """
@@ -171,6 +172,9 @@ class PVWeatherGenerator:
                  file_name : str = 'pv_and_weather.csv',
                  distance_method : str = 'circle',
                  season : Optional[str] = None,
+                 x_cols = ['global_rad:W', 'diffuse_rad:W',
+                           't_2m:C', 'effective_cloud_cover:octas',
+                           'relative_humidity_2m:p'],
                  drop_nan : bool = True
                 ):
         
@@ -208,6 +212,10 @@ class PVWeatherGenerator:
         self.unique_lat_lon = self.unique_lat_lon[:n_systems]
         
         df = df[df[lat_col].isin(self.unique_lat_lon[lat_col]) & df[lon_col].isin(self.unique_lat_lon[lon_col])]
+        
+        # smooths out the linear interpolation of the data
+        # TODO consider to do this prior to saving the files
+       
         self.df = df.copy()
     
         self.start_idx, self.end_idx = start_end_index(
