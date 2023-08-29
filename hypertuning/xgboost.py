@@ -37,7 +37,9 @@ class HyperOptXGBoost:
                     break
                 
                 y_pred = fit_xgboost(x_tr, y_tr, x_te, **params)
-                losses.append(mean_absolute_error(y_te, y_pred))
+                mae = mean_absolute_error(y_te.numpy(), y_pred)
+                mean_mae = np.mean(mae)
+                losses.append(mean_mae)
             
             if break_training:
                 break

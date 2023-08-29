@@ -100,6 +100,10 @@ class LSTM(nn.Module):
     def get_batch_size(self, x, batch_size=16):
         while len(x) % batch_size != 0:
             batch_size += 1
+            
+            if batch_size > len(x):
+                batch_size = len(x)
+                break
         
         return min(batch_size, len(x))
 

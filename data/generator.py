@@ -1,7 +1,6 @@
 import torch
 from data.utils import *
 from typing import Optional
-from scipy.signal import savgol_filter
 
 class PVDataGenerator:
     """
@@ -167,15 +166,11 @@ class PVWeatherGenerator:
                  n_days : int = 5,
                  minute_interval : int = 5,
                  day_min : int = 8, 
-                 day_max : int = 15,
+                 day_max : int = 16,
                  folder_name : str = 'pv_data',
                  file_name : str = 'pv_and_weather.csv',
                  distance_method : str = 'circle',
                  season : Optional[str] = None,
-                 x_cols = ['global_rad:W', 'diffuse_rad:W',
-                           't_2m:C', 'effective_cloud_cover:octas',
-                           'relative_humidity_2m:p'],
-                 drop_nan : bool = True
                 ):
         
         assert distance_method in ['circle', 'poly', 'all'], 'distance_method must be either circle or poly'

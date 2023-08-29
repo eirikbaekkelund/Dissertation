@@ -13,6 +13,8 @@ from torch.utils.data import TensorDataset, DataLoader
 from data.utils import store_gp_module_parameters
 from typing import Optional
 
+# TODO set up for inducing points
+
 class HadamardGPModel(gpytorch.models.ApproximateGP):
     """
     Class for creating a Hadamard GP model.
@@ -61,6 +63,7 @@ class HadamardGPModel(gpytorch.models.ApproximateGP):
         else:
             inducing_points = X
         
+        # mps is currently not supported in GPyTorch or PyTorch due to Cholesky decomposition not being supported
         # if torch.backends.mps.is_available():
         #     inducing_points.to('mps')
         

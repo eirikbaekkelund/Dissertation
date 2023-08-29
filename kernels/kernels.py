@@ -112,6 +112,7 @@ def get_mean_covar(num_latent : int = 1):
 def get_mean_covar_weather(
         num_latents : int, 
         d : int,
+        weather_kernel : str = 'rbf',
         combine : str = 'product'):
     """ 
     Get the mean and kernel for Hadamard GP
@@ -125,10 +126,14 @@ def get_mean_covar_weather(
         covar (ScaleKernel): Hadamard kernel
     """
     assert combine in ['product', 'sum'], "combine must be either 'product' or 'sum'"
-
+    assert weather_kernel in ['rbf', 'matern'], "weather_kernel must be either 'rbf' or 'matern'"
     mean, covar_t = get_mean_covar(num_latent=num_latents)
-    covar_w = ScaleKernel(RBFKernel(batch_shape=torch.Size([num_latents]),
-                          lengthscale_constraint=Positive(initial_value=3)))
+    if weather_kernel == 'rbf':
+        covar_w = ScaleKernel(RBFKernel(batch_shape=torch.Size([num_latents]),
+                            lengthscale_constraint=Positive(initial_value=0.5)))
+    else:
+        covar_w = ScaleKernel(MaternKernel(nu=3/2, batch_shape=torch.Size([num_latents]),
+                            lengthscale_constraint=Positive(initial_value=0.2)))
     
     # set active dimension based on exogenous part and temporal part
     covar_w.active_dims = torch.tensor([i for i in range(d-1)])

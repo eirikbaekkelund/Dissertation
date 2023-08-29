@@ -71,6 +71,48 @@ def plot_grid(df, coords, radius=1, distance_method='circle'):
 
     plt.show()
 
+def scatter_pv_vals(df, day = '2018-01-31 12:00:00'):
+    """
+    Plot the grid of the UK with the PV systems
+
+    Args:
+        df (pd.DataFrame): dataframe containing the PV systems locations
+        COORDS (tuple): coordinates of the center of the circle / corners of the polygon
+        RADIUS (float): radius of the circle
+    """
+
+    
+    plt.rcParams['font.family'] = 'Arial'
+    _, ax = plt.subplots(figsize=(7, 7))
+
+    map_uk = Basemap(llcrnrlon=-7, llcrnrlat=49, urcrnrlon=2, urcrnrlat=60, resolution='l', ax=ax)
+
+    map_uk.drawcoastlines()
+    map_uk.drawcountries()
+    map_uk.fillcontinents(color='forestgreen', lake_color='lightblue', alpha=0.5)
+
+    # Plot PV systems
+    # get first instance where the datetime column is at 12:00
+    df = df[df['datetime'] == day]
+
+    if 'latitude_noisy' in df.columns:
+        x, y = map_uk(df['longitude_noisy'].values, df['latitude_noisy'].values)
+    
+    elif 'latitude' in df.columns:
+        x, y = map_uk(df['longitude'].values, df['latitude'].values)
+
+    # scatter all the PV systems, but set a color bar based on the current PV value
+    pvals = map_uk.scatter(x, y, c=df['PV'].values, cmap='Reds', alpha=0.7, s=20)
+    plt.colorbar(pvals, label='PV value')
+
+    ax.set_xticks(np.arange(-7, 3,))
+    ax.set_yticks(np.arange(49.5, 58))
+
+    ax.set_xlabel('Longitude')
+    ax.set_ylabel('Latitude')
+    ax.set_title(f'PV systems in the UK ({day})')
+
+    plt.show()
 def plot_train_test_split(y_train, y_test, minute_interval=5):
     """ 
     Plot the train-test split of the data
@@ -187,165 +229,6 @@ def mode_beta_dist(alpha, beta):
 
     return result
 
-# TODO: add ax option and legend option
-# ax vs. plot should just be if ax is None plt.plot otherwise ax.plot
-# TODO update the approximate predictions to work with model.predict(x) call
-
-def plot_gp(model : gpytorch.models.GP,
-            x_train : torch.Tensor,
-            x_test : torch.Tensor,
-            y_train : torch.Tensor,
-            y_test : torch.Tensor,
-            pred_type : str = 'mode',
-            title : Optional[str] = None):
-    """
-    Plot the GP predictions for a given model and data
-
-    Args:
-        model (gpytorch.models.GP): GP model
-        x_train (torch.Tensor): training inputs
-        x_test (torch.Tensor): test inputs
-        y_train (torch.Tensor): training targets
-        y_test (torch.Tensor): test targets
-        y_inducing (torch.Tensor): inducing points
-        pred_type (str): type of prediction to plot
-    """
-    assert pred_type in ['mean', 'median', 'mode', 'all'], 'pred_type must be one of [mean, median, all, none]'
-    assert isinstance(model.likelihood, gpytorch.likelihoods.BetaLikelihood) or isinstance(model.likelihood, gpytorch.likelihoods.GaussianLikelihood), 'Unknown likelihood'
-    
-    # time points for the training and test data
-    time_train = torch.arange(0, len(y_train))
-    time_test = torch.arange(len(y_train), len(y_train) + len(y_test))
-    plt.rcParams['font.family'] = 'Arial'
-    plt.figure(figsize=(20, 8))
-
-    def plot_observed_data():
-        """ 
-        Scatters the observed data
-        """
-        plt.scatter(time_train, y_train, color='k', marker='x', label='Observed Data', alpha=0.4)
-    
-    def plot_gaussian_predictions():
-        """ 
-        Plots the mean and confidence intervals of the gaussian distribution
-        """
-        preds_train = model.predict(x_train)
-        preds_test = model.predict(x_test)
-
-        with torch.no_grad():
-            # plot the means
-            plt.plot(time_train, preds_train, color='b')
-            plt.plot(time_test, preds_test, color='r')
-
-            # plot the confidence regions
-            lower, upper = preds_train.confidence_region()
-            plt.fill_between(time_train, lower, upper, color='b', alpha=0.1)
-
-            lower, upper = preds_test.confidence_region()
-            plt.fill_between(time_test, lower, upper, color='b', alpha=0.1)
-    
-    # TODO fix this to work with prediction call on the approximate gp models
-    def plot_approximate_predictions():
-        """ 
-        Plots the mean and confidence intervals of the mean and
-        median of the posterior distribution when using non-Gaussian likelihoods
-        """
-        dist_train = model.predict(x_train)
-        dist_test = model.predict(x_test)
-        preds_train = dist_train.sample((50,))
-        preds_test = dist_test.sample((50,))
-        
-        lower_train, upper_train = np.percentile(preds_train, q=[2.5, 97.5], axis=0)
-        lower_train, upper_train = lower_train.mean(axis=0), upper_train.mean(axis=0)
-
-        lower_test, upper_test = np.percentile(preds_test, q=[2.5, 97.5], axis=0)
-        lower_test, upper_test = lower_test.mean(axis=0), upper_test.mean(axis=0)
-
-        plt.fill_between(time_train, lower_train, upper_train, alpha=0.1, color='b', label='95% Confidence Interval')
-        plt.fill_between(time_test, lower_test, upper_test, alpha=0.1, color='b')
-
-        def plot_mean():
-            """
-            Plot the mean and intervals from MC samples of the mean
-            """
-            mean_preds_train = preds_train.mean(axis=0)
-            mean_preds_test = preds_test.mean(axis=0)
-            
-            # plot the means
-            plt.plot(time_train, mean_preds_train.mean(axis=0), color='y', label='Mean')           
-            plt.plot(time_test, mean_preds_test.mean(axis=0), color='y')
-    
-
-        def plot_median():
-            """ 
-            Plot the mean and intervals from MC samples of the median
-            """
-            median_preds_train = preds_train.median(axis=0).values
-            median_preds_test = preds_test.median(axis=0).values
-
-            plt.plot(time_train, median_preds_train.mean(axis=0), color='r', label='Median')
-            plt.plot(time_test, median_preds_test.mean(axis=0), color='r')
-        
-        def plot_mode():
-            """ 
-            Plots the mean and confidence intervals of the beta distribution
-            from MC samples using the mode of the distribution
-            """
-            model.predict(x_train)
-            alphas_train = model.likelihood.alpha
-            betas_train = model.likelihood.beta
-            
-            modes_train = mode_beta_dist(alphas_train, betas_train)
-            mode_mean_train = np.mean(modes_train, axis=0)
-
-            plt.plot(time_train, mode_mean_train, color='g', label='Mode')
-
-            model.predict(x_test)
-            alphas_test = model.likelihood.alpha
-            betas_test = model.likelihood.beta
-
-            modes_test = mode_beta_dist(alphas_test, betas_test)
-            mode_mean_test = np.mean(modes_test, axis=0)
-
-            plt.plot(time_test, mode_mean_test, color='g')
-        
-        if pred_type == 'mean':
-            plot_mean()
-        elif pred_type == 'median':
-            plot_median()
-        
-        elif pred_type == 'mode':
-            plot_mode()
-        elif pred_type == 'all':
-            plot_mean()
-            plot_median()
-            plot_mode()
-        else:
-            pass
-    
-    # scatter observed data
-    plot_observed_data()
-
-    if isinstance(model.likelihood, gpytorch.likelihoods.BetaLikelihood) or isinstance(model, gpytorch.models.ApproximateGP):
-        plot_approximate_predictions()
-    
-    elif isinstance(model.likelihood, gpytorch.likelihoods.GaussianLikelihood):
-        plot_gaussian_predictions()
-    
-    else:
-        print('Unknown likelihood')
-    
-    # scatter test data
-    plt.scatter(time_test, y_test, color='k', alpha=0.4, marker='x')
-
-    plt.vlines(x=time_train.max(), ymin=-0.05, ymax=1.001, color='black', linestyle='--', label='Train-Test Split')
-
-    plt.ylim(-0.01, 1.001)
-    plt.xlabel('Time (5 min intervals between 8am and 4pm)', fontsize=13)
-    plt.ylabel('PV Production (0-1 Scale)', fontsize=13)
-
-    plt.legend(loc='upper left')
-    plt.show();
 
 def plot_gp_ax(model, x_train, x_test, y_train, y_test, pred_type='mode', title=None, ax=None, legend=True):
     """
@@ -367,108 +250,82 @@ def plot_gp_ax(model, x_train, x_test, y_train, y_test, pred_type='mode', title=
     # time points for the training and test data
     time_train = torch.arange(0, len(y_train))
     time_test = torch.arange(len(y_train), len(y_train) + len(y_test))
+ 
     
-    def plot_gaussian_predictions(ax):
-        """Plots the mean and confidence intervals of the Gaussian distribution"""
-        preds_train = model.predict(x_train)
-        preds_test = model.predict(x_test)
-
-        with torch.no_grad():
-            # plot the means
-            ax.plot(time_train, preds_train, color='b')
-            ax.plot(time_test, preds_test, color='r')
-
-            # plot the confidence regions
-            lower, upper = preds_train.confidence_region()
-            ax.fill_between(time_train, lower, upper, color='b', alpha=0.1)
-
-            lower, upper = preds_test.confidence_region()
-            ax.fill_between(time_test, lower, upper, color='b', alpha=0.1)
+    dist_train = model.predict(x_train)
+    dist_test = model.predict(x_test)
+    preds_train = dist_train.sample((50,))
+    preds_test = dist_test.sample((50,))
     
-    def plot_approximate_predictions(ax):
-        """Plots the mean and confidence intervals of the mean and median of the posterior distribution when using non-Gaussian likelihoods"""
-        dist_train = model.predict(x_train)
-        dist_test = model.predict(x_test)
-        preds_train = dist_train.sample((50,))
-        preds_test = dist_test.sample((50,))
+    lower_train, upper_train = np.percentile(preds_train, q=[2.5, 97.5], axis=0)
+    lower_train, upper_train = lower_train.mean(axis=0), upper_train.mean(axis=0)
+
+    lower_test, upper_test = np.percentile(preds_test, q=[2.5, 97.5], axis=0)
+    lower_test, upper_test = lower_test.mean(axis=0), upper_test.mean(axis=0)
+
+    ax.fill_between(time_train, lower_train, upper_train, alpha=0.1, color='b')
+    ax.fill_between(time_test, lower_test, upper_test, alpha=0.1, color='r')
+
+
+    def plot_mean():
+        """Plot the mean and intervals from MC samples of the mean"""
+        mean_preds_train = preds_train.mean(axis=0)
+        mean_preds_test = preds_test.mean(axis=0)
         
-        lower_train, upper_train = np.percentile(preds_train, q=[2.5, 97.5], axis=0)
-        lower_train, upper_train = lower_train.mean(axis=0), upper_train.mean(axis=0)
-
-        lower_test, upper_test = np.percentile(preds_test, q=[2.5, 97.5], axis=0)
-        lower_test, upper_test = lower_test.mean(axis=0), upper_test.mean(axis=0)
-
-        ax.fill_between(time_train, lower_train, upper_train, alpha=0.1, color='b', label='95% Confidence Interval')
-        ax.fill_between(time_test, lower_test, upper_test, alpha=0.1, color='b')
-
-
-        def plot_mean():
-            """Plot the mean and intervals from MC samples of the mean"""
-            mean_preds_train = preds_train.mean(axis=0)
-            mean_preds_test = preds_test.mean(axis=0)
-            
-            # plot the means
-            ax.plot(time_train, mean_preds_train.mean(axis=0), color='y', label='Mean')           
-            ax.plot(time_test, mean_preds_test.mean(axis=0), color='y')
-        
-        def plot_median():
-            """Plot the mean and intervals from MC samples of the median"""
-            median_preds_train = preds_train.median(axis=0).values
-            median_preds_test = preds_test.median(axis=0).values
-
-            ax.plot(time_train, median_preds_train.mean(axis=0), color='r', label='Median')
-            ax.plot(time_test, median_preds_test.mean(axis=0), color='r')
-
-        
-        def plot_mode():
-            """Plots the mean and confidence intervals of the beta distribution from MC samples using the mode of the distribution"""
-            model.predict(x_train)
-            alphas_train = model.likelihood.alpha
-            betas_train = model.likelihood.beta
-            
-            modes_train = mode_beta_dist(alphas_train, betas_train)
-            mode_mean_train = np.mean(modes_train, axis=0)
-
-            ax.plot(time_train, mode_mean_train, color='g', label='Mode')
-
-            model.predict(x_test)
-            alphas_test = model.likelihood.alpha
-            betas_test = model.likelihood.beta
-
-            modes_test = mode_beta_dist(alphas_test, betas_test)
-            mode_mean_test = np.mean(modes_test, axis=0)
-
-            ax.plot(time_test, mode_mean_test, color='g')
-        
-        if pred_type == 'mean':
-            plot_mean()
-        elif pred_type == 'median':
-            plot_median()
-        elif pred_type == 'mode':
-            plot_mode()
-        elif pred_type == 'all':
-            plot_mean()
-            plot_median()
-            plot_mode()
+        # plot the means
+        ax.plot(time_train, mean_preds_train.mean(axis=0), color='y', label='Mean')           
+        ax.plot(time_test, mean_preds_test.mean(axis=0), color='y')
     
-    if ax is not None:
-        ax.scatter(time_train, y_train, color='k', marker='x', label='Observed Data', alpha=0.4)
+    def plot_median():
+        """Plot the mean and intervals from MC samples of the median"""
+        median_preds_train = preds_train.median(axis=0).values
+        median_preds_test = preds_test.median(axis=0).values
 
-    if isinstance(model.likelihood, gpytorch.likelihoods.BetaLikelihood) or isinstance(model, gpytorch.models.ApproximateGP):
-        plot_approximate_predictions(ax)
-    elif isinstance(model.likelihood, gpytorch.likelihoods.GaussianLikelihood):
-        plot_gaussian_predictions(ax)
+        ax.plot(time_train, median_preds_train.mean(axis=0), color='b', label='Median')
+        ax.plot(time_test, median_preds_test.mean(axis=0), color='r')
 
+    
+    def plot_mode():
+        """Plots the mean and confidence intervals of the beta distribution from MC samples using the mode of the distribution"""
+        model.predict(x_train)
+        alphas_train = model.likelihood.alpha
+        betas_train = model.likelihood.beta
+        
+        modes_train = mode_beta_dist(alphas_train, betas_train)
+        mode_mean_train = np.mean(modes_train, axis=0)
+
+        ax.plot(time_train, mode_mean_train, color='g', label='Mode')
+
+        model.predict(x_test)
+        alphas_test = model.likelihood.alpha
+        betas_test = model.likelihood.beta
+
+        modes_test = mode_beta_dist(alphas_test, betas_test)
+        mode_mean_test = np.mean(modes_test, axis=0)
+
+        ax.plot(time_test, mode_mean_test, color='g')
+    
+    if pred_type == 'mean':
+        plot_mean()
+    elif pred_type == 'median':
+        plot_median()
+    elif pred_type == 'mode':
+        plot_mode()
+    elif pred_type == 'all':
+        plot_mean()
+        plot_median()
+        plot_mode()
+    
+    ax.scatter(time_train, y_train, color='k', marker='x', label='Observed Data', alpha=0.4)
     ax.scatter(time_test, y_test, color='k', alpha=0.4, marker='x')
     ax.vlines(x=time_train.max(), ymin=-0.05, ymax=1.001, color='black', linestyle='--', label='Train-Test Split')
 
     ax.set_ylim(-0.01, 1.001)
-    ax.set_xlabel('Time (5 min intervals between 8am and 4pm)', fontsize=20)
-    ax.set_ylabel('PV Production (0-1 Scale)', fontsize=20)
-    ax.set_title(title, fontsize=20)
+    ax.set_xlabel('Time (5 min intervals)', fontsize=30)
+    ax.set_ylabel('PV Production (0-1 Scale)', fontsize=30)
+    ax.set_title(title, fontsize=30)
    
-    if legend:
-        ax.legend(loc='upper left')
+    ax.legend(loc='upper left')
 
 
 def plot_alpha_beta(model):

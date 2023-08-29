@@ -112,17 +112,36 @@ class PVWeatherLoader(PVWeatherGenerator, Dataset):
 # also designed to run the experiment due to its train test split return
 
 class SystemLoader(Dataset):
+    """ 
+    SystemLoader is a custom dataset for the PV data to use from the folds.
+    Loops through the systems either in a combined set of X, y, and task indices
+    that is split into train and test sets by a concetanation of the X and y values,
+    or by individual systems that are split into train and test sets by the task indices.
+
+    Loop through the loader to get the X, y, and task indices for concatenation or loop through 
+    the individual systems by running:
+    >>> # first loop through the loader of all systems
+    >>> for X_tr, Y_tr, X_te, Y_te, T_tr, T_te in loader:
+    >>> # then loop through the individual systems
+    >>>     for i in range(len(T_te.unique())):
+    >>>         x_tr, y_tr, x_te, y_te = loader.train_test_split_individual(i)
+
+    Args:
+        df (pd.DataFrame): dataframe of the PV data
+        train_interval (int): number of days to use for train-test split
+        x_cols (list, optional): list of column names to use as X
+        season (str, optional): season to use for the data. Defaults to None.
+    """
     def __init__(
             self,
             df : pd.DataFrame,
-            # X : pd.DataFrame,
-            # y : pd.DataFrame,
             train_interval : int,
             x_cols : Optional[list] =['global_rad:W', 
                                       'diffuse_rad:W', 
                                       'effective_cloud_cover:octas',
                                       'relative_humidity_2m:p', 't_2m:C'],
             season : Optional[str] = None,
+            n_hours_pred : int = 6
     ):
         super().__init__()
         if season is not None:
@@ -147,12 +166,13 @@ class SystemLoader(Dataset):
         self.tasks = task_indices
         self.n_systems = len(unique_lat_lon)
         self.train_interval = train_interval
+        self.n_hours_pred = n_hours_pred
         
         # index to start at
         self.start = 0
         self.end = self.train_interval
     
-    def set_index(self):
+    def update_index(self):
         self.start += self.train_interval
         self.end = self.start + self.train_interval
 
@@ -160,6 +180,9 @@ class SystemLoader(Dataset):
         return len(self.tasks[self.tasks == 0]) // self.train_interval
     
     def slice_data(self, i):
+        """
+        Slice the data for the ith system
+        """
         x = self.X[self.tasks == i][self.start:self.end]
         # normalize x
         for j in range(x.shape[1]):
@@ -171,23 +194,28 @@ class SystemLoader(Dataset):
         t = self.tasks[self.tasks == i][self.start:self.end]
         y = self.y[self.tasks == i][self.start:self.end]
 
-        
-
         return x.float(), y, t
-    
 
     def train_test_split_region(self):
+        """
+        Split the data into train and test sets using all systems.
+        """
         X_train, X_test = [], []
         Y_train, Y_test = [], []
         T_train, T_test = [], []
 
         # get a random hour between 8 and 14
-        hour = np.random.randint(8, 14)
+        hour = np.random.randint(8, 16 - self.n_hours_pred)
         
         for i in range(self.n_systems):
             x, y, t = self.slice_data(i)
            
-            x_train, y_train, x_test, y_test = train_test_split(X=x, y=y, hour=hour,n_hours=6)
+            x_train, y_train, x_test, y_test = train_test_split(
+                                                X=x,
+                                                y=y, 
+                                                hour=hour,
+                                                n_hours=self.n_hours_pred
+                                            )
             n_tr, n_te = len(x_train), len(x_test)
             task_train, task_test = t[:n_tr], t[n_tr:n_tr+n_te]
 
@@ -216,24 +244,36 @@ class SystemLoader(Dataset):
 
     
     def train_test_split_individual(self, i):
+        """
+        Split the data into train and test sets using the ith system.
+        """
+
         x_train = self.x_train[self.task_train == i]
         y_train = self.y_train[self.task_train == i]
         x_test = self.x_test[self.task_test == i]
         y_test = self.y_test[self.task_test == i]
         
         return x_train, y_train, x_test, y_test
-
+    
+    def reset(self):
+        self.start = 0
+        self.end = self.train_interval
+    
     def __getitem__(self, idx):
        
         self.train_test_split_region()
 
         if idx == len(self):
             # stop iteration at the end of the dataset
+            self.reset()
             raise StopIteration
         elif self.x_train.shape[0] == 0:
+            self.reset()
             raise StopIteration
+        # if break is called, reset the index
+
         
-        self.set_index()
+        self.update_index()
 
         return self.x_train, self.y_train, self.x_test, \
                self.y_test, self.task_train, self.task_test

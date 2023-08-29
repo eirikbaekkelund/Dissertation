@@ -4,7 +4,8 @@ import numpy as np
 import wandb
 from gpytorch.variational import (VariationalStrategy, 
                                   LMCVariationalStrategy,
-                                  MeanFieldVariationalDistribution)
+                                  MeanFieldVariationalDistribution,
+                                  CholeskyVariationalDistribution)
 from gpytorch.models import ApproximateGP
 from gpytorch.distributions import MultivariateNormal
 from data.utils import store_gp_module_parameters

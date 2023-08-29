@@ -1,7 +1,6 @@
 import torch
 import gpytorch
 import numpy as np
-from torch.nn import Parameter
 from gpytorch.distributions import base_distributions
 from gpytorch.constraints import Positive, Interval
 from gpytorch.priors import Prior
@@ -11,39 +10,29 @@ class BetaLikelihood_MeanParametrization(gpytorch.likelihoods.BetaLikelihood):
     
     def __init__(self, 
                  scale : Optional[torch.Tensor] = 30,
-                 correcting_scale  : Optional[float] = 1,
-                 correcting_scale_lower_bound : Optional[float] = 0.1,
-                 correcting_scale_upper_bound : Optional[float] = 0.9,
-                 correcting_scale_grad : Optional[bool] = False,
+                 scale_upper_bnd : Optional[torch.Tensor] = None,
                  *args, **kwargs):
         
         super().__init__(*args, **kwargs)
         
         assert scale > 0, 'scale must be positive'
-        assert correcting_scale > 0, 'scale must be positive'
-        assert 0 <= correcting_scale_lower_bound <= 1, 'lower bound must be in [0, 1]'
-        assert 0 <= correcting_scale_upper_bound <= 1, 'upper bound must be in [0, 1]'
-        assert correcting_scale_lower_bound < correcting_scale_upper_bound, 'lower bound must be smaller than upper bound'
+        if scale_upper_bnd is not None:
+            assert scale_upper_bnd > 0, 'scale_upper_bnd must be positive'
+            assert scale_upper_bnd > scale, 'scale_upper_bnd must be greater than scale'
         
         self.scale = scale 
-        # can set grad to True if we want to impose a correction on the scale parameter
-        # in regions where there is a higher noise level
-        if correcting_scale_grad:
-            self.correcting_scale = Parameter(torch.tensor(correcting_scale, dtype=torch.float64), 
-                                              requires_grad=correcting_scale_grad)       
-       
+        self.scale_upper_bnd = scale_upper_bnd
+
     def forward(self, function_samples, *args, **kwargs):
         
         mixture = torch.distributions.Normal(0, 1).cdf(function_samples)
+        # set scale by upper bound if passed
+        if self.scale_upper_bnd is not None:
+            self.scale = torch.clamp(self.scale, 1e-10, self.scale_upper_bnd)
 
         self.alpha = mixture * self.scale 
         self.beta = self.scale - self.alpha 
 
-        # apply correction to the scale parameter if passed
-        if hasattr(self, 'correcting_scale'):
-            pass 
-            # see previous version of this file for the implementation of the correction
-        
         self.alpha = torch.clamp(self.alpha, 1e-10, 1e10)
         self.beta = torch.clamp(self.beta, 1e-10, 1e10)
 
@@ -84,12 +73,11 @@ class MultitaskBetaLikelihood(BetaLikelihood_MeanParametrization):
         self,
         num_tasks: int,
         scale = 15,
-        correcting_scale = 1,
         batch_shape: torch.Size = torch.Size([]),
         scale_prior: Optional[Prior] = None,
         scale_constraint: Optional[Interval] = None,
     ) -> None:
-        super().__init__(scale=scale, correcting_scale=correcting_scale)
+        super().__init__(scale=scale)
 
         if scale_constraint is None:
             scale_constraint = Positive()

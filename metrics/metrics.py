@@ -1,10 +1,16 @@
 import numpy as np
+import torch
 
 def mean_absolute_error(y_pred, y_test):
+
     if y_pred.shape != y_test.shape:
         raise ValueError('y_pred and y_test must have the same shape')
-    mae = np.abs(y_pred - y_test)
-    return mae
+    
+    if isinstance(y_pred, np.ndarray):
+       return np.abs(y_pred - y_test)
+    elif isinstance(y_pred, torch.Tensor):
+        return torch.abs(y_pred - y_test)
+   
 
 
 def get_mean_ci(df):
