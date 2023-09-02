@@ -1,5 +1,4 @@
-from .plotting import (plot_gp,
-                       plot_train_test_split,
+from .plotting import (plot_train_test_split,
                        plot_grid, 
                        plot_seasons, 
                        plot_gp_ax, 

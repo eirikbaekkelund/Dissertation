@@ -17,21 +17,30 @@ class MultitaskGPModel(ApproximateGP):
                  likelihood : gpytorch.likelihoods.Likelihood = None,
                  mean_module : gpytorch.means.Mean = None,
                  covar_module : gpytorch.kernels.Kernel = None,
-                 num_latents : int = 1,
+                 num_latents : int = 8,
                  learn_inducing_locations : bool = False,
-                 jitter : float = 1e-4):
+                 variational_dist : str = 'cholesky',
+                 jitter : float = 1e-6):
         # check that num_latents is consistent with the batch_shape of the mean and covar modules
         assert num_latents == mean_module.batch_shape[0], 'num_latents must be equal to the batch_shape of the mean module'
         assert num_latents == covar_module.batch_shape[0], 'num_latents must be equal to the batch_shape of the covar module'
+        assert variational_dist in ['mean_field', 'cholesky'], 'variational_dist must be one of: mean_field, cholesky'
 
         num_tasks = y.size(-1)
         
-        # MeanField constructs a variational distribution for each output dimension
-        variational_distribution = MeanFieldVariationalDistribution(
-                                    num_inducing_points=X.size(0), 
-                                    batch_shape=torch.Size([num_latents]),
-                                    jitter=jitter
-                                )
+        if variational_dist == 'mean_field':
+            variational_distribution = MeanFieldVariationalDistribution(
+                                        num_inducing_points=X.size(0), 
+                                        batch_shape=torch.Size([num_latents]),
+                                        jitter=jitter
+                                    )
+        elif variational_dist == 'cholesky':
+            # MeanField constructs a variational distribution for each output dimension
+            variational_distribution = CholeskyVariationalDistribution(
+                                        num_inducing_points=X.size(0), 
+                                        batch_shape=torch.Size([num_latents]),
+                                        jitter=jitter
+                                    )
         
         # LMC constructs MultitaskMultivariateNormal from the base var dist
         variational_strategy = LMCVariationalStrategy(

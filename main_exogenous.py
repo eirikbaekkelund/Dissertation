@@ -8,8 +8,12 @@ from models import (ApproximateGPBaseModel,
                     LSTM, 
                     fit_bayesian_ridge,
                     fit_xgboost)
-from metrics import mean_absolute_error, inside_ci, nlpd_holt, get_mean_ci
-from gpytorch.metrics import negative_log_predictive_density as NLPD
+from metrics import (mean_absolute_error, 
+                     inside_ci, 
+                     nlpd_holt, 
+                     get_mean_ci,
+                     neg_log_pred,
+                     neg_log_pred_hadamard)
 from kernels import get_mean_covar_weather
 from pv_plot import plot_forecast_mae, boxplot_forecast_horizon, boxplot_models
 from likelihoods import BetaLikelihood_MeanParametrization, HadamardBetaLikelihood
@@ -30,16 +34,15 @@ if __name__ == "__main__":
     MINUTE_INTERVAL = 5 # the minute interval of our data
     DAILY_DATA_POINTS = (DAY_MAX - DAY_MIN) * 60 // MINUTE_INTERVAL
     N_DAYS_FOLD = 7
-    N_SYSTEMS = 7
+    N_SYSTEMS = 6
     CIRCLE_COORDS = (53.28, -3.05)
     RADIUS = 0.25
     MODELS = ['LSTM', 'BayesianRidge', 'XGBoost', 'SimpleGP', 'HadamardGP']
-    # simple GP config
-    jitter = 1e-3
+    jitter = 1e-6
     gp_config = {
         'type' : 'stochastic', # SVI
         'name' : 'cholesky', # type of posterior covariance approximation
-        'jitter' : jitter, # jitter for numerical stability
+        'jitter' : 1e-6, # jitter for numerical stability
     }
     # inputs to the simple GP model
   
@@ -55,7 +58,7 @@ if __name__ == "__main__":
     df = generator.df
     num_tasks = N_SYSTEMS
     num_latents = N_SYSTEMS // 2 + 1
-    interval = 10 # for inducing points of hadamard GP
+    interval = 6 # for inducing points of hadamard GP
 
     train_interval = int(DAILY_DATA_POINTS * N_DAYS_FOLD) # number of data points per system in each fold
     # create loader that will iterate over the data
@@ -90,8 +93,9 @@ if __name__ == "__main__":
             likelihood=HadamardBetaLikelihood(num_tasks=num_tasks, scale=30),
             num_tasks=num_tasks,
             num_latents=num_latents,
+            learn_inducing_locations=True,
             inducing_proportion=1,
-            jitter=1e-4,
+            jitter=jitter,
         )
         model_hadamard.set_cpu()
         start_had = time.time()
@@ -99,7 +103,7 @@ if __name__ == "__main__":
         end_had = time.time()
         model_hadamard.predict(X_te, T_te)
         pred_dist_hadamard = model_hadamard.predict_dist()
-        nlpd = NLPD(pred_dist_hadamard, Y_te).t()
+        nlpd = neg_log_pred_hadamard(pred_dist_hadamard, Y_te, num_tasks)
         nlpd[(nlpd == torch.inf) | (nlpd == -torch.inf)] = torch.nan
         nlpd_hadamard = nlpd.median(axis=-1).values
         print('-*-'*10)
@@ -111,17 +115,21 @@ if __name__ == "__main__":
                 # TODO: do the fitting process of each model
                 if m == 'LSTM':
                     model_lstm = LSTM(
-                        x_train=x_tr[:,:-1].float(), # last column is the time index
+                        x_train=x_tr.float(), # last column is the time index
                         y_train=y_tr.float(),
+                        hidden_units=1,
+                        n_layers=3,
+                        dropout=0.14,
+                        batch_size=40,
                     )
                     start = time.time()
-                    model_lstm.fit()
+                    model_lstm.fit(n_iter=150, lr=2e-3)
                     end = time.time()
-                    y_pred = model_lstm.predict(x_te[:,:-1].float(), y_te.float())
+                    y_pred = model_lstm.predict(x_te.float(), y_te.float())
                     mae = mean_absolute_error(y_pred, y_te.numpy())
                     print('-*-*'*10)
                     print(f'LSTM: {lstm_j+1} | Time: {end-start:.3f} (s)')
-                    print(f'Avg MAE: {mae.mean()}')
+                    print(f'Avg MAE: {mae.mean():.3f}')
                     print('-*-*'*10)
                     if df_lstm is None:
                         df_lstm = pd.DataFrame({f'{m}_mae{lstm_j}' : mae})
@@ -132,7 +140,7 @@ if __name__ == "__main__":
 
                 elif m == 'BayesianRidge':
                     start = time.time()
-                    y_pred, var = fit_bayesian_ridge(x_tr[:,:-1], y_tr, x_te[:,:-1])
+                    y_pred, var = fit_bayesian_ridge(x_tr, y_tr, x_te)
                     end = time.time()
                     lower_brr = y_pred - 1.96 * np.sqrt(var)
                     upper_brr = y_pred + 1.96 * np.sqrt(var)
@@ -140,7 +148,7 @@ if __name__ == "__main__":
                     nlpd_brr = nlpd_holt(y_pred, var, y_te.numpy())
                     
                     print(f'BRR: {brr_j+1} | Time: {end-start:.3f} (s)')
-                    print(f'Avg MAE: {mae.mean()}, Avg NLPD: {nlpd_brr.mean()}')
+                    print(f'Avg MAE: {mae.mean():.3f}, Avg NLPD: {nlpd_brr.mean()}')
                     print('-*-*'*10)
 
                     if df_brr is None:
@@ -156,11 +164,12 @@ if __name__ == "__main__":
                 
                 elif m == 'XGBoost':
                     start = time.time()
-                    y_pred = fit_xgboost(x_tr[:,:-1], y_tr, x_te[:,:-1])
+                    y_pred = fit_xgboost(x_tr, y_tr, x_te,
+                                         max_depth=8, max_leaves=7, n_estimators=400)
                     end = time.time()
                     mae = mean_absolute_error(y_pred, y_te.numpy())
                     print(f'XGBoost: {xgb_j + 1} | Time: {end-start:.3f} (s)')
-                    print(f'Avg MAE: {mae.mean()}')
+                    print(f'Avg MAE: {mae.mean():.3f}')
                     print('-*-*'*10)
                     if df_xgb is None:
                         df_xgb = pd.DataFrame({f'{m}_mae{xgb_j}' : mae})
@@ -185,7 +194,7 @@ if __name__ == "__main__":
                         model_gp.warm_start(state_dict)
                     try:
                         start = time.time()
-                        model_gp.fit(n_iter=200, lr=0.2, verbose=False)
+                        model_gp.fit(n_iter=100, lr=0.2, verbose=False)
                         end = time.time()
                         state_dict = model_gp.state_dict()
                         y_pred, lower_gp, upper_gp = model_gp.predict(x_te, pred_type='median')
@@ -193,11 +202,11 @@ if __name__ == "__main__":
                             
                         pct_inside = inside_ci(lower_gp, upper_gp, y_te.numpy())
                         mae = mean_absolute_error(y_te, y_pred)
-                        nlpd = NLPD(pred_dist_gp, y_te).median(axis=0).values
+                        nlpd = neg_log_pred(pred_dist_gp, y_te).median(axis=0).values
                         nlpd[nlpd.isinf()] = np.nan
                         print('-*-*'*10)
                         print(f'SimpleGP: {gp_j + 1} | Time: {end-start:.3f} (s)')
-                        print(f'Avg MAE: {mae.mean()}', f'Avg NLPD: {np.nanmean(nlpd)}', f'Pct Inside: {pct_inside}')
+                        print(f'Avg MAE: {mae.mean():.3f}', f'Avg NLPD: {np.nanmean(nlpd):.3f}', f'Pct Inside: {pct_inside}')
                         print('-*-*'*10)
                         
                         if df_gp is None:
@@ -215,7 +224,8 @@ if __name__ == "__main__":
                         
                         gp_j += 1
                         psd_error = False
-                    except:
+                    except Exception as e:
+                        print(e)
                         psd_error = True
                         print(f'Not PSD Error, jitter of {jitter} added without success')
                 
@@ -229,7 +239,7 @@ if __name__ == "__main__":
 
                     print(f'HadamardGP: {hadamard_j + 1}')
                     print('-*-*'*10)
-                    print(f'Avg MAE: {mae_had.mean()}', f'Avg NLPD: {np.nanmean(nlpd_had)}', f'Pct Inside: {pct_inside_had}')
+                    print(f'Avg MAE: {mae_had.mean():.3f}', f'Avg NLPD: {np.nanmean(nlpd_had):.3f}', f'Pct Inside: {pct_inside_had}')
                     print('-*-*'*10)
 
                     if df_hadamard is None:

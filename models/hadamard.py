@@ -18,8 +18,8 @@ from typing import Optional
 class HadamardGPModel(gpytorch.models.ApproximateGP):
     """
     Class for creating a Hadamard GP model.
-    If latents are passed, then the model is a LMC model.
-    Otherwise, the model is a multitask model.
+    If latents are passed, then the model is a LCM model.
+    Otherwise, the model is a multitask model with independent multitask variational inference.
     The type of variational distribution is specified by the variational_type argument.
 
     Args:
@@ -395,6 +395,4 @@ class HadamardGPModel(gpytorch.models.ApproximateGP):
         self.likelihood.cpu()
         self.X = self.X.cpu()
         self.y = self.y.cpu()
-        
-
     

@@ -59,13 +59,12 @@ class OrdinaryLFM(VariationalLFM):
             h_samples = odeint(self.odefunc, h0, t, method='rk4', options=dict(step_size=step_size)) # (T, S, num_outputs, 1)
 
         self.f = None
-        # self.t_index = None
-        # self.last_t = None
+  
         if return_samples:
             return h_samples
 
         h_mean = torch.mean(h_samples, dim=1).squeeze(-1).transpose(0, 1)  # shape was (#outputs, #T, 1)
-        h_var = torch.var(h_samples, dim=1).squeeze(-1).transpose(0, 1) + 1e-7
+        h_var = torch.var(h_samples, dim=1).squeeze(-1).transpose(0, 1) + 1e-5
 
         h_covar = torch.diag_embed(h_var) + torch.eye(self.num_outputs, dtype=torch.float64) * 1e-1
         

@@ -1,1 +1,1 @@
-from .lfm_trainer import ExactTrainer, VariationalTrainer
+from .lfm_trainer import ExactTrainer, VariationalTrainer, Trainer

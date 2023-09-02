@@ -230,7 +230,7 @@ def mode_beta_dist(alpha, beta):
     return result
 
 
-def plot_gp_ax(model, x_train, x_test, y_train, y_test, pred_type='mode', title=None, ax=None, legend=True):
+def plot_gp_ax(model, x_train, x_test, y_train, y_test, pred_type='mode', ax=None):
     """
     Plot the GP predictions for a given model and data
 
@@ -254,8 +254,8 @@ def plot_gp_ax(model, x_train, x_test, y_train, y_test, pred_type='mode', title=
     
     dist_train = model.predict(x_train)
     dist_test = model.predict(x_test)
-    preds_train = dist_train.sample((50,))
-    preds_test = dist_test.sample((50,))
+    preds_train = dist_train.sample((100,))
+    preds_test = dist_test.sample((100,))
     
     lower_train, upper_train = np.percentile(preds_train, q=[2.5, 97.5], axis=0)
     lower_train, upper_train = lower_train.mean(axis=0), upper_train.mean(axis=0)
@@ -316,18 +316,12 @@ def plot_gp_ax(model, x_train, x_test, y_train, y_test, pred_type='mode', title=
         plot_median()
         plot_mode()
     
-    ax.scatter(time_train, y_train, color='k', marker='x', label='Observed Data', alpha=0.4)
-    ax.scatter(time_test, y_test, color='k', alpha=0.4, marker='x')
+    ax.scatter(time_train, y_train, color='k', marker='x', label='Observed Data', alpha=0.5)
+    ax.scatter(time_test, y_test, color='k', alpha=0.5, marker='x')
     ax.vlines(x=time_train.max(), ymin=-0.05, ymax=1.001, color='black', linestyle='--', label='Train-Test Split')
+    ax.set_ylim(-0.01, 1.01)
 
-    ax.set_ylim(-0.01, 1.001)
-    ax.set_xlabel('Time (5 min intervals)', fontsize=30)
-    ax.set_ylabel('PV Production (0-1 Scale)', fontsize=30)
-    ax.set_title(title, fontsize=30)
-   
-    ax.legend(loc='upper left')
-
-
+    
 def plot_alpha_beta(model):
     
     fig, ax = plt.subplots(figsize=(15, 6), sharey=False)
