@@ -42,13 +42,13 @@ class ExactLFM(LFM, gpytorch.models.ExactGP):
 
         return gpytorch.distributions.MultivariateNormal(mean_x, covar_x)
 
-    def predict_m(self, pred_t, jitter=1e-3) -> torch.distributions.MultivariateNormal:
+    def predict_m(self, pred_t, jitter=1e-6) -> torch.distributions.MultivariateNormal:
         """
         Predict outputs of the LFM
         
         Args:
             pred_t (torch.Tensor): Prediction times
-            jitter (float, optional): Jitter to add to the diagonal of the covariance matrix. Defaults to 1e-3.
+            jitter (float, optional): Jitter to add to the diagonal of the covariance matrix.
         
         Returns:
             torch.distributions.MultivariateNormal: Predicted outputs
@@ -74,10 +74,10 @@ class ExactLFM(LFM, gpytorch.models.ExactGP):
         
         mean = KxstarxKinvY.view(self.num_outputs, pred_t.shape[0])
         mean = mean.transpose(0, 1)
-    
+        
         return MultivariateNormal(mean, var)
 
-    def predict_f(self, pred_t, jitter=1e-5) -> MultivariateNormal:
+    def predict_f(self, pred_t, jitter=1e-6) -> MultivariateNormal:
         """
         Predict the latent function.
 
@@ -107,6 +107,17 @@ class ExactLFM(LFM, gpytorch.models.ExactGP):
 
         batch_mvn = gpytorch.distributions.MultivariateNormal(mean, var)
         return gpytorch.distributions.MultitaskMultivariateNormal.from_batch_mvn(batch_mvn, task_dim=0)
+    
+    def pv_pred(self, t, jitter=1e-6):
+        dist = self.predict_m(t, jitter)
+
+        mean = torch.clamp(dist.mean, 0, 1).transpose(0, 1).detach().squeeze(0)
+        std = dist.variance.sqrt().transpose(0, 1).detach().squeeze(0)
+        
+        lower = torch.clamp(mean - 1.96*std, 0, 1)
+        upper = torch.clamp(mean + 1.96*std, 0, 1)
+
+        return mean, lower, upper
 
     def save(self, filepath):
         torch.save(self.state_dict(), filepath+'lfm.pt')

@@ -1,12 +1,17 @@
 import numpy as np
+import torch
+from gpytorch.metrics import negative_log_predictive_density as nlpd
 
 def mean_absolute_error(y_pred, y_test):
+
     if y_pred.shape != y_test.shape:
         raise ValueError('y_pred and y_test must have the same shape')
-    mae = np.abs(y_pred - y_test)
-    return mae
-
-
+    
+    if isinstance(y_pred, np.ndarray):
+       return np.abs(y_pred - y_test)
+    elif isinstance(y_pred, torch.Tensor):
+        return torch.abs(y_pred - y_test)
+   
 def get_mean_ci(df):
     mean = df.mean(axis=1)
     lower = df.quantile(0.025, axis=1)
@@ -34,3 +39,19 @@ def nlpd_holt(
     normalized_log_density = log_density / y_test.shape[0]
 
     return normalized_log_density
+
+def neg_log_pred(dist, y_test):
+    """
+    Negative log predictive density for GP model.
+    Computes the negative predictive log density normalized by the size of the test data for a GP model.
+    """
+    return nlpd(dist, y_test)
+
+def neg_log_pred_hadamard(dist, y_test, num_tasks):
+    """
+    Negative log predictive density for Hadamard model.
+    Computes the negative predictive log density rescaled by the number of tasks for a Hadamard model.
+    Otherwise, the negative predictive log density = normalized nlpd / num_tasks * n_points
+    """
+    
+    return nlpd(dist, y_test).t() * num_tasks

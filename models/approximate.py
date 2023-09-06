@@ -266,7 +266,7 @@ class ApproximateGPBaseModel(ApproximateGP):
             if pred_type is 'all'
 
         """
-        assert pred_type in ['dist', 'median', 'mean', 'mode', 'all'], 'pred_type must be one of: dist, median, mean, mode, all'
+        assert pred_type in ['dist', 'median', 'mean', 'mode', 'all'], "pred_type must be one of: 'dist', 'median', 'mean', 'mode', all"
         self.eval()
         self.likelihood.eval()
         

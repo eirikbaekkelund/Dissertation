@@ -3,7 +3,6 @@ from abc import abstractmethod
 import torch
 import gpytorch
 import numpy as np
-import sys
 from alfi.models import VariationalLFM
 from alfi.utilities.torch import is_cuda
 from torch.utils.data.dataloader import DataLoader
@@ -13,6 +12,7 @@ from time import time
 from pathlib import Path
 from typing import List
 
+from matplotlib import pyplot as plt
 
 class TorteTrainer:
     """
@@ -247,6 +247,7 @@ class VariationalTrainer(Trainer):
         super().__init__(lfm, optimizers, dataset, batch_size=lfm.num_tasks, **kwargs)
         self.warm_variational = warm_variational
         self.step_size = step_size
+        self.elbo_gp = gpytorch.mlls.VariationalELBO(lfm.likelihood, lfm.gp_model, num_data=len(self.train_indices))
     
     def single_epoch(self, epoch=0, **kwargs):
         
@@ -260,17 +261,21 @@ class VariationalTrainer(Trainer):
         
             data_input, y = data
             data_input = data_input.cuda() if is_cuda() else data_input
-        
+            
             y = y.cuda() if is_cuda() else y
         
             data_input = data_input.squeeze(0).float()
         
             output = self.model(data_input, step_size=self.step_size)
             y_target = y.t().squeeze(-1)
+
+            output_gp = self.model.gp_model(data_input)
+            y_target_gp = self.dataset.data[0][1].squeeze(-1)
             
             log_likelihood, kl_divergence, _ = self.model.loss_fn(output, y_target, mask=self.train_mask)
+            elbo = self.elbo_gp(output_gp, y_target_gp)
 
-            loss = - (log_likelihood - kl_divergence)
+            loss = - (log_likelihood - kl_divergence) - elbo
             loss.backward()
             
             if epoch >= self.warm_variational:

@@ -49,9 +49,9 @@ if __name__ == '__main__':
                   'simple_exp', 'exp', 'gp', 'multitask_gp']
     seasons = ['winter', 'spring', 'summer', 'fall']
     # gp model configuration
-    jitter = 1e-3
+    jitter = 1e-4
     config = {  'type': 'stochastic',
-                'name': 'mean_field',
+                'name': 'cholesky',
                 }
     inputs ={
         'jitter': jitter,

@@ -166,12 +166,11 @@ class PVWeatherGenerator:
                  n_days : int = 5,
                  minute_interval : int = 5,
                  day_min : int = 8, 
-                 day_max : int = 15,
+                 day_max : int = 16,
                  folder_name : str = 'pv_data',
                  file_name : str = 'pv_and_weather.csv',
                  distance_method : str = 'circle',
                  season : Optional[str] = None,
-                 drop_nan : bool = True
                 ):
         
         assert distance_method in ['circle', 'poly', 'all'], 'distance_method must be either circle or poly'
@@ -208,6 +207,10 @@ class PVWeatherGenerator:
         self.unique_lat_lon = self.unique_lat_lon[:n_systems]
         
         df = df[df[lat_col].isin(self.unique_lat_lon[lat_col]) & df[lon_col].isin(self.unique_lat_lon[lon_col])]
+        
+        # smooths out the linear interpolation of the data
+        # TODO consider to do this prior to saving the files
+       
         self.df = df.copy()
     
         self.start_idx, self.end_idx = start_end_index(

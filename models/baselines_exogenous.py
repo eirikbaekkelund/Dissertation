@@ -23,7 +23,12 @@ def fit_bayesian_ridge(x_train, y_train, x_test):
     y_pred = np.clip(y_pred, 0, 1)
     return y_pred, var
 
-def fit_xgboost(x_train, y_train, x_test):
+def fit_xgboost(x_train, 
+                y_train, 
+                x_test,
+                max_depth=3,
+                max_leaves=3,
+                n_estimators=150,):
     """
     Fit an XGBoost model to the data
     """
@@ -35,9 +40,9 @@ def fit_xgboost(x_train, y_train, x_test):
         x_test = x_test.numpy()
 
     xgb_model = xgb.XGBRegressor(objective="reg:squarederror", 
-                                 max_depth=5,
-                                 max_leaves=3,
-                                 n_estimators=50,
+                                 max_depth=max_depth,
+                                 max_leaves=max_leaves,
+                                 n_estimators=n_estimators,
                                  n_jobs=-1,
                                  random_state=42)
     xgb_model.fit(x_train, y_train)
@@ -63,7 +68,7 @@ class LSTM(nn.Module):
         batch_size : int = 10,
     ):
         super().__init__()
-        self.train_dataset = SequenceDataset(x_train, y_train)
+        self.train_dataset = SequenceDataset(x_train, y_train, sequence_length=30)
         # find batch size divisor
         
         self.batch_size = self.get_batch_size(x_train, batch_size)
@@ -95,6 +100,10 @@ class LSTM(nn.Module):
     def get_batch_size(self, x, batch_size=16):
         while len(x) % batch_size != 0:
             batch_size += 1
+            
+            if batch_size > len(x):
+                batch_size = len(x)
+                break
         
         return min(batch_size, len(x))
 
