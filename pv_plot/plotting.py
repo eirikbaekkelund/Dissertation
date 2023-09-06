@@ -434,7 +434,7 @@ def plot_lfm(lfm, dataset):
     pv_var = pv_dist.variance.detach().squeeze(0).numpy()
     pv_std = np.sqrt(pv_var)
 
-    cloud_init_test = dataset.cloud_test[0]
+    cloud_init_test = cloud_mean[-1]
     cloud_var_test = cloud_var[-1] 
     cloud_dist_test = lfm.predict_cloud(cloud_init_test, cloud_var_test, dataset.times_test)
 
@@ -442,7 +442,7 @@ def plot_lfm(lfm, dataset):
     cloud_var_test = cloud_dist_test.variance.detach().squeeze(0).numpy()
     cloud_std_test = np.sqrt(cloud_var_test)
 
-    pv_init_test = dataset.pv_test[0]
+    pv_init_test = pv_mean[-1]
     pv_var_test = cloud_var_test[0]
     pv_dist_test = lfm.predict_pv(pv_init_test, pv_var_test, dataset.times_test)
 
@@ -456,8 +456,8 @@ def plot_lfm(lfm, dataset):
 
     ax.scatter(dataset.times, dataset.cloud, marker='o', alpha=0.5, color='k', label='Cloud Data')
     ax.scatter(dataset.times, dataset.pv, marker='x', alpha=0.5, color='k', label='PV Data')
-    ax.scatter(dataset.times_test, dataset.cloud_test, marker='o', alpha=0.5, color='k', label='Cloud')
-    ax.scatter(dataset.times_test, dataset.pv_test, marker='x', alpha=0.5, color='k', label='PV')
+    ax.scatter(dataset.times_test, dataset.cloud_test, marker='o', alpha=0.5, color='k')
+    ax.scatter(dataset.times_test, dataset.pv_test, marker='x', alpha=0.5, color='k')
 
     ax.plot(dataset.times, cloud_mean, label='Latent Force', color='b')
     ax.fill_between(dataset.times, cloud_mean - 1.96 * cloud_std, cloud_mean + 1.96 * cloud_std, alpha=0.1, color='b')
