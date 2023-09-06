@@ -410,3 +410,83 @@ def plot_forecast_mae(results : dict, season : Optional[str] = None, pred_points
     plt.legend()
     plt.tight_layout()
     plt.show()
+
+
+def plot_lfm(model, dataset, gp_model):
+
+    y_pred_pv = model(dataset.times)
+    pv_mean1 = y_pred_pv.mean.detach().squeeze(0).numpy()
+    pv_var1 = y_pred_pv.variance.detach().squeeze(0).numpy()
+
+    y_pred_gp = gp_model.predict(dataset.times)
+    mean_gp = y_pred_gp.mean.detach().squeeze(0).numpy()
+    var_gp = y_pred_gp.variance.detach().squeeze(0).numpy()
+
+    pred_times = dataset.times_test
+    pv_dist, cloud_dist = model.predict_pv(pred_times, 
+                                        initial_state_pred=pv_mean1[-1], 
+                                        initial_var_pred=pv_var1[-1],
+                                        fit_gp=True)
+
+    pv_mean = pv_dist.mean.detach().squeeze(0).numpy()
+    pv_var = pv_dist.variance.detach().squeeze(0).numpy()
+
+    cloud_mean = cloud_dist.mean.detach().squeeze(0).numpy()
+    cloud_var = cloud_dist.variance.detach().squeeze(0).numpy()
+
+    fig, ax = plt.subplots(figsize=(20, 8))
+
+    ax.scatter(dataset.times, dataset.pv, label='PV Data', color='k', marker='x', alpha=0.5)
+    ax.plot(dataset.times, pv_mean1, label='Predicted', color='r')
+    ax.fill_between(dataset.times,
+            pv_mean1 - 1.96 * np.sqrt(pv_var1),
+            pv_mean1 + 1.96 * np.sqrt(pv_var1),
+            alpha=0.1, color='r')
+
+
+    ax.scatter(dataset.times, dataset.cloud, label='Cloud Data', color='k', marker='o', alpha=0.5)
+    ax.plot(dataset.times, mean_gp, label='Latent Force', color='b')
+    ax.fill_between(dataset.times,
+            mean_gp - 1.96 * np.sqrt(var_gp),
+            mean_gp + 1.96 * np.sqrt(var_gp),
+            alpha=0.1,color='b')
+
+    y_min1 = min(min(pv_mean1 - 1.96 * np.sqrt(pv_var1)), min(mean_gp - 1.96 * np.sqrt(var_gp)))
+    y_max1 = max(max(pv_mean1 + 1.96 * np.sqrt(pv_var1)), max(mean_gp + 1.96 * np.sqrt(var_gp)))
+
+
+    ax.scatter(dataset.times_test, dataset.pv_test, color='k', marker='x', alpha=0.5)
+    ax.plot(dataset.times_test, pv_mean, color='r')
+    ax.fill_between(dataset.times_test,
+            pv_mean - 1.96 * np.sqrt(pv_var),
+            pv_mean + 1.96 * np.sqrt(pv_var),
+            alpha=0.1, color='r')
+
+    ax.scatter(dataset.times_test, dataset.cloud_test, color='k', marker='o', alpha=0.5)
+    ax.plot(dataset.times_test, cloud_mean, color='b')
+    ax.fill_between(dataset.times_test,
+            cloud_mean - 1.96 * np.sqrt(cloud_var),
+            cloud_mean + 1.96 * np.sqrt(cloud_var),
+            alpha=0.1, color='b')
+
+
+
+    y_min_2 = min(min(pv_mean - 1.96 * np.sqrt(pv_var)), min(cloud_mean - 1.96 * np.sqrt(cloud_var)))
+    y_max_2 = max(max(pv_mean + 1.96 * np.sqrt(pv_var)), max(cloud_mean + 1.96 * np.sqrt(cloud_var)))
+    y_min, y_max = min(y_min1, y_min_2), max(y_max1, y_max_2)
+
+    #ax.vlines(dataset.times[-1], y_min - 0.05, y_max + 0.05, color='k', linestyle='--', alpha=0.5, label='Training / Test Split')
+    ax.legend(loc='upper left', fontsize=20)
+    ax.set_xlabel('Time Steps', fontsize=20)
+    ax.set_ylabel('PV / Cloud Cover', fontsize=20)
+    ax.tick_params(axis='both', which='major', labelsize=20)
+    ax.set_ylim(y_min -0.05, y_max + 0.05)
+
+    ax.axvspan(dataset.times[0], dataset.times[-1], alpha=0.2, color='gray')
+    arrow = ax.arrow(dataset.times[-1], y_max - 0.05, 10, 0, head_width=0.02, head_length=0.5, fc='k', ec='k')
+
+    # Add text above the arrow
+    ax.annotate('Extrapolation', xy=(dataset.times[-1] + 5, y_max - 0.02), fontsize=20, ha='center')
+
+    plt.tight_layout()
+    plt.show()
