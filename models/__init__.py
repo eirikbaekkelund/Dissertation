@@ -15,5 +15,5 @@ from .baselines_temporal import (Persistence,
                                  fit_simple_exp,
                                  var_exp_simulation)
 from .variational import VariationalBase
-from .gp_lfm import ExactGP, ApproximateGP
-from .lfm_pv import ApproximatePVLFM, ExactPVLFM
+from .gp_lfm import  ApproximateGP
+from .lfm_pv import ApproximatePVLFM
