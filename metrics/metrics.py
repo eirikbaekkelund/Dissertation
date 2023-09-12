@@ -47,11 +47,11 @@ def neg_log_pred(dist, y_test):
     """
     return nlpd(dist, y_test)
 
-def neg_log_pred_hadamard(dist, y_test, num_tasks):
+def neg_log_pred_hadamard(dist, y_test):
     """
     Negative log predictive density for Hadamard model.
     Computes the negative predictive log density rescaled by the number of tasks for a Hadamard model.
     Otherwise, the negative predictive log density = normalized nlpd / num_tasks * n_points
     """
     
-    return nlpd(dist, y_test).t() * num_tasks
+    return nlpd(dist, y_test).t() 

@@ -13,8 +13,6 @@ from torch.utils.data import TensorDataset, DataLoader
 from data.utils import store_gp_module_parameters
 from typing import Optional
 
-# TODO set up for inducing points
-
 class HadamardGPModel(gpytorch.models.ApproximateGP):
     """
     Class for creating a Hadamard GP model.

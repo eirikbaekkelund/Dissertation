@@ -139,7 +139,8 @@ class SystemLoader(Dataset):
             x_cols : Optional[list] =['global_rad:W', 
                                       'diffuse_rad:W', 
                                       'effective_cloud_cover:octas',
-                                      'relative_humidity_2m:p', 't_2m:C'],
+                                      'relative_humidity_2m:p', 't_2m:C',
+                                      'wind_speed_10m:ms'],
             season : Optional[str] = None,
             n_hours_pred : int = 6
     ):
@@ -220,13 +221,13 @@ class SystemLoader(Dataset):
             task_train, task_test = t[:n_tr], t[n_tr:n_tr+n_te]
 
             # run savgol filter on input data except time dimension
-            x_train[:, :-1] = torch.tensor(savgol_filter(x_train[:, :-1], 
+            if len(x_train) > 12:
+                x_train[:, :-1] = torch.tensor(savgol_filter(x_train[:, :-1], 
+                                                    window_length=12, polyorder=3, axis=0), 
+                                                dtype=torch.float32)
+                x_test[:, :-1] = torch.tensor(savgol_filter(x_test[:, :-1], 
                                                 window_length=12, polyorder=3, axis=0), 
                                             dtype=torch.float32)
-            x_test[:, :-1] = torch.tensor(savgol_filter(x_test[:, :-1], 
-                                            window_length=12, polyorder=3, axis=0), 
-                                        dtype=torch.float32)
-
             X_train.append(x_train)
             Y_train.append(y_train)
             T_train.append(task_train)

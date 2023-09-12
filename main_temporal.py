@@ -24,7 +24,7 @@ torch.manual_seed(42)
 np.random.seed(42)
 
 # UGLY CODE FOR RUNNING EXPERIMENTS, NO TIME TO CLEAN
-# TODO clean code to make it more pythonic
+# TODO clean code 
 
 if __name__ == '__main__':
     # data parameters
@@ -32,17 +32,17 @@ if __name__ == '__main__':
     DAY_MIN = 8
     DAY_MAX = 16
     # 90 days is roughly a season
-    N_DAYS = 90
-    N_DAYS_TRAIN = 5
+    N_DAYS = 365
+    N_DAYS_TRAIN = 7
+    N_SYSTEMS = 6
+    CIRCLE_COORDS = (53.28, -3.05)
+    RADIUS = 0.25
     MINUTE_INTERVAL = 5
     DAILY_POINTS = (DAY_MAX - DAY_MIN) * 60 // MINUTE_INTERVAL
     TOTAL_POINTS = int(N_DAYS * DAILY_POINTS)
     INTERVAL = int(DAILY_POINTS * N_DAYS_TRAIN)
     N_HOURS_PRED = 2
     PRED_POINTS = N_HOURS_PRED * 60 // MINUTE_INTERVAL
-    N_SYSTEMS = 15
-    RADIUS = 0.35
-    CIRCLE_COORDS = (55, -1.5)
     plot_results = True
 
     models_list =['persistence', 'yesterday', 'hourly_avg', 'var', 
@@ -55,10 +55,10 @@ if __name__ == '__main__':
                 }
     inputs ={
         'jitter': jitter,
-        'likelihood': BetaLikelihood_MeanParametrization(scale=25),
+        'likelihood': BetaLikelihood_MeanParametrization(scale=15),
         'learn_inducing_locations': False
     }
-    num_latent = 8 # TODO find from hyperparameter tuning
+    num_latent = N_SYSTEMS // 2 + 1 
 
 
     # TODO add seasons as argument and save results in a folder with the name of the season
@@ -103,11 +103,15 @@ if __name__ == '__main__':
         df_multitask_gp = None
         df_multitask_gp_nlpd = None
         psd_error = False
+        state_dict = None
 
         for (x_train, y_train), (x_test, y_test) in zip(train_loader, test_loader):
             
             x_train, y_train, x_test, y_test = check_model_inputs(x_train, y_train, x_test, y_test)
+            
             if x_train is None:
+                break
+            if x_train.shape[0] < 50:
                 continue
 
             elif y_train.shape[-1] < num_latent:
@@ -248,11 +252,12 @@ if __name__ == '__main__':
                     
                         if k != 0 and (not psd_error or not torch.isnan(y).any()):
                             try:
-                                model.warm_start(state_dict)
+                                if state_dict is not None:
+                                    model.warm_start(state_dict)
                             except RuntimeError:
                                 print('variational strategy not compatible with warm start. Shape mismatch')
                         try:
-                            model.fit(n_iter=200, lr=0.2, use_wandb=True)
+                            model.fit(n_iter=200, lr=0.2, use_wandb=False)
                             # save model parameters to pass on next iteration
                             state_dict = model.state_dict()
                             
@@ -300,16 +305,16 @@ if __name__ == '__main__':
                     
                     likelihood = MultitaskBetaLikelihood(
                         num_tasks=y_train.size(-1),
-                        scale=25,
+                        scale=14,
                     )
-                    mean, covar = get_mean_covar(num_latent=8)
+                    mean, covar = get_mean_covar(num_latent=num_latent)
                     model = MultitaskGPModel(
                         X=x_train,
                         y=y_train,
                         likelihood=likelihood,
                         mean_module=mean,
                         covar_module=covar,
-                        num_latents=8,
+                        num_latents=num_latent,
                         jitter=1e-2,
                     )
                     try:
@@ -352,7 +357,7 @@ if __name__ == '__main__':
                 elif model == 'holt':
                     # TODO 
                     pass
-    
+
 
         # dictionary of data frames
         df_dict = {'VAR': df_var, 

@@ -484,7 +484,9 @@ def plot_lfm(lfm, dataset):
     ax.set_ylim(y_min -0.05, y_max + 0.05)
     ax.axvspan(dataset.times[0], dataset.times[-1], alpha=0.2, color='gray')
     arrow = ax.arrow(dataset.times[-1], y_max - 0.05, 10, 0, head_width=0.02, head_length=0.5, fc='k', ec='k')
-
+    # mark initial point of test data with a blue and red circle with no fill
+    ax.scatter(dataset.times[-1], cloud_init_test, marker='o', color='b', edgecolors='k', s=100)
+    ax.scatter(dataset.times[-1], pv_init_test, marker='o', color='r', edgecolors='k', s=100)
     # Add text above the arrow
     ax.annotate('Extrapolation', xy=(dataset.times[-1] + 5, y_max - 0.02), fontsize=20, ha='center')
 

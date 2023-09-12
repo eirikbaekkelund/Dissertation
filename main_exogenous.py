@@ -19,11 +19,20 @@ from pv_plot import plot_forecast_mae, boxplot_forecast_horizon, boxplot_models
 from likelihoods import BetaLikelihood_MeanParametrization, HadamardBetaLikelihood
 from data import SystemLoader, PVWeatherGenerator
 
-# seeds for reproducability - use 42 because it's the answer to everything
 np.random.seed(42)
 torch.manual_seed(42)
 
-# Another ugly script to run the models and get the results
+
+def get_beta(idx):
+    # winter
+    return 15
+    # if idx <= 9 or idx > 48:
+    #     return 30
+    # # otherwise more fluctuations in PV, so assign greater variance by lower
+    # # dispersion parameter
+    # else:
+    #     return 15
+
 
 if __name__ == "__main__":
     # data parameters (Data is from Manchester Area)
@@ -38,13 +47,12 @@ if __name__ == "__main__":
     CIRCLE_COORDS = (53.28, -3.05)
     RADIUS = 0.25
     MODELS = ['LSTM', 'BayesianRidge', 'XGBoost', 'SimpleGP', 'HadamardGP']
-    jitter = 1e-6
+    jitter = 1e-5
     gp_config = {
         'type' : 'stochastic', # SVI
         'name' : 'cholesky', # type of posterior covariance approximation
-        'jitter' : 1e-6, # jitter for numerical stability
+        'jitter' : jitter, # jitter for numerical stability
     }
-    # inputs to the simple GP model
   
     # generator takes data from the entire data base and filters out what we specify 
     generator = PVWeatherGenerator(
@@ -58,15 +66,14 @@ if __name__ == "__main__":
     df = generator.df
     num_tasks = N_SYSTEMS
     num_latents = N_SYSTEMS // 2 + 1
-    interval = 6 # for inducing points of hadamard GP
+    interval = 12 # for inducing points of hadamard GP
 
     train_interval = int(DAILY_DATA_POINTS * N_DAYS_FOLD) # number of data points per system in each fold
     # create loader that will iterate over the data
     loader = SystemLoader(df, train_interval=train_interval)
 
-    # X is the data, Y is the target, T is the task indices as an array for Hadamard GP
-    # subscripts tr and te denote train and test data
     psd_error = False
+    psd_hadamard_error = False
 
     gp_j = 0
     lstm_j = 0
@@ -80,39 +87,47 @@ if __name__ == "__main__":
     df_xgb = None
     df_hadamard = None
 
-
-    for X_tr, Y_tr, X_te, Y_te, T_tr, T_te in loader:
-        if X_tr.shape[0] < 100:
+    for i, (X_tr, Y_tr, X_te, Y_te, T_tr, T_te) in enumerate(loader):
+        beta_scale = get_beta(i)
+        print(f'Fold {i+1} of {len(loader)}\n')
+        if X_tr.shape[0] < 100 or X_tr[T_tr == 0].shape[0] < 100:
             break
-        mean, covar = get_mean_covar_weather(num_latents=num_latents, d=X_tr.shape[1])
-        model_hadamard = HadamardGPModel(
-            X=X_tr[::interval],
-            y=Y_tr[::interval],
-            mean_module=mean,
-            covar_module=covar,
-            likelihood=HadamardBetaLikelihood(num_tasks=num_tasks, scale=30),
-            num_tasks=num_tasks,
-            num_latents=num_latents,
-            learn_inducing_locations=True,
-            inducing_proportion=1,
-            jitter=jitter,
-        )
-        model_hadamard.set_cpu()
-        start_had = time.time()
-        model_hadamard.fit(n_iter=120, lr=0.2, task_indices=T_tr[::interval])
-        end_had = time.time()
-        model_hadamard.predict(X_te, T_te)
-        pred_dist_hadamard = model_hadamard.predict_dist()
-        nlpd = neg_log_pred_hadamard(pred_dist_hadamard, Y_te, num_tasks)
-        nlpd[(nlpd == torch.inf) | (nlpd == -torch.inf)] = torch.nan
-        nlpd_hadamard = nlpd.median(axis=-1).values
-        print('-*-'*10)
-        print(f'Time Hadamard: {end_had-start_had:.3f} (s)')
+        try:
+            mean, covar = get_mean_covar_weather(num_latents=num_latents, d=X_tr.shape[1])
+            model_hadamard = HadamardGPModel(
+                X=X_tr[::interval],
+                y=Y_tr[::interval],
+                mean_module=mean,
+                covar_module=covar,
+                likelihood=HadamardBetaLikelihood(num_tasks=num_tasks, scale=beta_scale),
+                num_tasks=num_tasks,
+                num_latents=num_latents,
+                learn_inducing_locations=False,
+                inducing_proportion=1,
+                jitter=jitter,
+            )
+            model_hadamard.set_cpu()
+            start_had = time.time()
+        
+            model_hadamard.fit(n_iter=200, lr=0.2, task_indices=T_tr[::interval])
+            end_had = time.time()
+            model_hadamard.predict(X_te, T_te)
+            pred_dist_hadamard = model_hadamard.predict_dist()
+            nlpd = neg_log_pred_hadamard(pred_dist_hadamard, Y_te)
+            nlpd[(nlpd == torch.inf) | (nlpd == -torch.inf)] = torch.nan
+            nlpd_hadamard = nlpd.median(axis=-1).values
+            print('-*-'*10)
+            print('Beta scale: ', beta_scale)
+            print(f'Time Hadamard: {end_had-start_had:.3f} (s)')
+            psd_hadamard_error = False
+        except Exception as e:
+            psd_hadamard_error = True
+            print(e)
+           
         for i in range(loader.n_systems):
             x_tr, y_tr, x_te, y_te = loader.train_test_split_individual(i)
             
             for m in MODELS:
-                # TODO: do the fitting process of each model
                 if m == 'LSTM':
                     model_lstm = LSTM(
                         x_train=x_tr.float(), # last column is the time index
@@ -187,7 +202,7 @@ if __name__ == "__main__":
                             y=y_tr,
                             mean_module=mean,
                             covar_module=covar,
-                            likelihood=BetaLikelihood_MeanParametrization(scale=30),
+                            likelihood=BetaLikelihood_MeanParametrization(scale=beta_scale),
                             config=gp_config)
                     
                     if i != 0 and not psd_error:
@@ -227,9 +242,8 @@ if __name__ == "__main__":
                     except Exception as e:
                         print(e)
                         psd_error = True
-                        print(f'Not PSD Error, jitter of {jitter} added without success')
                 
-                elif m == 'HadamardGP':
+                elif m == 'HadamardGP' and not psd_hadamard_error:
                     y_pred_had, lower_had, upper_had = model_hadamard.get_i_prediction(i, T_te)
                     pct_inside_had = inside_ci(lower_had, upper_had, y_te.numpy())
                     mae_had = mean_absolute_error(y_pred_had, y_te.numpy())
@@ -257,6 +271,21 @@ if __name__ == "__main__":
                     hadamard_j += 1
             print('\n')
     
+    df_nlpd = {
+        'BRR': df_brr_nlpd,
+        'SimpleGP': df_gp_nlpd,
+        'HadamardGP': df_hadamard_nlpd
+    }
+    for model, df in df_nlpd.items():
+        df.to_csv(f'{model}_nlpd.csv')
+    
+    df_pct = {
+        'SimpleGP': df_gp_pct,
+        'HadamardGP': df_hadamard_pct
+    }
+    for model, df in df_pct.items():
+        df.to_csv(f'{model}_pct.csv')
+
     df_dict = {
         'BRR': df_brr,
         'XGBoost': df_xgb,
