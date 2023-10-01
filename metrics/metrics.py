@@ -3,7 +3,7 @@ import torch
 from gpytorch.metrics import negative_log_predictive_density as nlpd
 
 def mean_absolute_error(y_pred, y_test):
-
+    
     if y_pred.shape != y_test.shape:
         raise ValueError('y_pred and y_test must have the same shape')
     
@@ -13,10 +13,10 @@ def mean_absolute_error(y_pred, y_test):
         return torch.abs(y_pred - y_test)
    
 def get_mean_ci(df):
-    mean = df.mean(axis=1)
+    median = df.median(axis=1)
     lower = df.quantile(0.025, axis=1)
     upper = df.quantile(0.975, axis=1)
-    return mean, lower, upper
+    return median, lower, upper
 
 def inside_ci(lower, upper, y):
     pct_inside = ((y >= lower) & (y <= upper)).sum()

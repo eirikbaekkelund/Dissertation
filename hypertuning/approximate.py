@@ -36,6 +36,7 @@ class BetaQPGPOneDim(GPQuasiPeriodic):
     def get_metrics(self):
         assert self.metrics is not None, 'Metrics not yet computed.'
         assert self.percentiles_coverage is not None, 'Percentiles coverage not yet computed.'
+        
         return self.metrics, self.percentiles_coverage
 
     def objective(self, trial : optuna.trial.Trial):
@@ -87,4 +88,4 @@ class BetaQPGPOneDim(GPQuasiPeriodic):
                 print(f'NLPD: {metric:.4f}')
         
         self.store_metrics(metrics, percentiles_coverage)
-        return torch.tensor(metrics).mean().item()
+        return torch.tensor(metrics).mean().item() + n_skips

@@ -180,9 +180,9 @@ class ApproximateGPBaseModel(ApproximateGP):
             if verbose and (i+1) % print_freq == 0:
                 print(f'Iter {i+1}/{n_iter} - Loss: {loss.item():.3f}')  
             
-            # if loss does not improve by more than 0.1% for 15 iterations, stop training
+            # if loss does not improve by more than 0.001 for 15 iterations, stop training
             if i > 0:
-                if abs(losses[-2] - losses[-1]) < 1e-6:
+                if abs(losses[-2] - losses[-1]) < 1e-3:
                     j += 1
                     if j == 15:
                         print(f'Early stopping at iter {i+1}')

@@ -58,7 +58,7 @@ class Kernel:
                         outputscale_prior=outputscale_prior)
     
     def get_quasi_periodic(self,
-                           matern_base: gpytorch.kernels.MaternKernel,
+                           base: gpytorch.kernels.Kernel,
                            matern_quasi: gpytorch.kernels.MaternKernel,
                            periodic1: gpytorch.kernels.PeriodicKernel,
                            periodic2: Optional[gpytorch.kernels.PeriodicKernel] = None):
@@ -73,13 +73,13 @@ class Kernel:
             periodic_kernel = periodic1
         
         product = ProductKernel(periodic_kernel, matern_quasi)
-        quasi_periodic = AdditiveKernel(product, matern_base)
+        quasi_periodic = AdditiveKernel(product, base)
         
         quasi_periodic.batch_shape = torch.Size([self.num_latent])
 
         return quasi_periodic
 
-def get_mean_covar(num_latent : int = 1):
+def get_mean_covar(num_latent : int = 1, base_kernel='matern'):
     """
     Returns the mean and kernel for the GP model for one dimensional input
     using temporal kernel (quasi-periodic kernel) 
@@ -95,15 +95,20 @@ def get_mean_covar(num_latent : int = 1):
     mean = ZeroMean(batch_shape=torch.Size([num_latent]))
 
     kernel = Kernel(num_latent=num_latent)
-    matern_base = kernel.get_matern(lengthscale_constraint=Positive(),
-                                    outputscale_constraint=Positive())
-    matern_quasi = kernel.get_matern(lengthscale_constraint=Positive(initial_value=1000),
-                                    outputscale_constraint=Positive())
-    periodic1 = kernel.get_periodic(outputscale_constraint=Positive(),
-                                    periodic_constraint=Positive(),
-                                    lengthscale_constraint=Positive())
+    if base_kernel == 'matern':
+        base = kernel.get_matern(lengthscale_constraint=Positive(initial_value=3),
+                                    outputscale_constraint=Positive(initial_value=0.4))
+    elif base_kernel == 'rbf':
+        base = gpytorch.kernels.ScaleKernel(gpytorch.kernels.RBFKernel(batch_shape=torch.Size([num_latent]),
+                                    lengthscale_constraint=Positive(initial_value=3)))
+    
+    matern_quasi = kernel.get_matern(lengthscale_constraint=Positive(initial_value=100),
+                                    outputscale_constraint=Positive(initial_value=0.1))
+    periodic1 = kernel.get_periodic(outputscale_constraint=Positive(initial_value=0.1),
+                                    periodic_constraint=Positive(initial_value=1.5),
+                                    lengthscale_constraint=Positive(initial_value=2))
 
-    covar = kernel.get_quasi_periodic(matern_base=matern_base, 
+    covar = kernel.get_quasi_periodic(base=base, 
                                         matern_quasi=matern_quasi,
                                         periodic1=periodic1)
     
@@ -113,7 +118,8 @@ def get_mean_covar_weather(
         num_latents : int, 
         d : int,
         weather_kernel : str = 'rbf',
-        combine : str = 'product'):
+        combine : str = 'product',
+        use_ard_dim : bool = False):
     """ 
     Get the mean and kernel for Hadamard GP
 
@@ -129,10 +135,22 @@ def get_mean_covar_weather(
     assert weather_kernel in ['rbf', 'matern'], "weather_kernel must be either 'rbf' or 'matern'"
     mean, covar_t = get_mean_covar(num_latent=num_latents)
     if weather_kernel == 'rbf':
-        covar_w = ScaleKernel(RBFKernel(batch_shape=torch.Size([num_latents]),
-                            lengthscale_constraint=Positive(initial_value=0.5)))
+        if use_ard_dim:
+            covar_w = ScaleKernel(RBFKernel(batch_shape=torch.Size([num_latents]),
+                                ard_num_dims=d-1,
+                                has_lengthscale=True,
+                                lengthscale_constraint=Positive(initial_value=0.1)))
+        else:
+            covar_w = ScaleKernel(RBFKernel(batch_shape=torch.Size([num_latents]),
+                                lengthscale_constraint=Positive(initial_value=0.1)))
     else:
-        covar_w = ScaleKernel(MaternKernel(nu=3/2, batch_shape=torch.Size([num_latents]),
+        if use_ard_dim:
+            covar_w = ScaleKernel(MaternKernel(nu=3/2, batch_shape=torch.Size([num_latents]),
+                            ard_num_dims=d-1,
+                            has_lengthscale=True,
+                            lengthscale_constraint=Positive(initial_value=0.2)))
+        else:
+            covar_w = ScaleKernel(MaternKernel(nu=3/2, batch_shape=torch.Size([num_latents]),
                             lengthscale_constraint=Positive(initial_value=0.2)))
     
     # set active dimension based on exogenous part and temporal part
@@ -143,5 +161,3 @@ def get_mean_covar_weather(
         return mean, AdditiveKernel(covar_w, covar_t)
 
     return mean, ProductKernel(covar_w, covar_t)
-
-

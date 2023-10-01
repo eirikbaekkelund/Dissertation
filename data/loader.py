@@ -195,6 +195,11 @@ class SystemLoader(Dataset):
         t = self.tasks[self.tasks == i][self.start:self.end]
         y = self.y[self.tasks == i][self.start:self.end]
 
+        if y.max() >= 1:
+            y[y >= 1] = 1 - 1e-6
+        if y.min() <= 0:
+            y[y <= 0] = 1e-6
+
         return x.float(), y, t
 
     def train_test_split_region(self):
@@ -207,7 +212,7 @@ class SystemLoader(Dataset):
 
         # get a random hour between 8 and 14
         hour = np.random.randint(8, 16 - self.n_hours_pred)
-        
+        self.hour = hour
         for i in range(self.n_systems):
             x, y, t = self.slice_data(i)
            

@@ -43,10 +43,8 @@ class HyperOptBase(ABC):
         """
         Sample the training configuration.
         """
-        # sample learning rate between 0.05 and 0.3 with step size 0.05
-        lr = trial.suggest_int('lr * 100', 5, 30, step=5) / 100
-        # sample number of epochs between 100 and 500 with step size 100
-        epochs = trial.suggest_int('epochs', 100, 1000, step=100)
+        lr = 0.1
+        epochs = 120
 
         return {'lr' : lr, 'n_iter' : epochs}
 

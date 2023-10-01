@@ -85,11 +85,12 @@ class HadamardGPModel(gpytorch.models.ApproximateGP):
         self.likelihood = likelihood
         self.variational_type = variational_type
         self.num_tasks = num_tasks
+        self.jitter = jitter
 
     def forward(self, x):
      
         mean = self.mean_module(x)
-        covar = self.covar_module(x)
+        covar = self.covar_module(x) + self.jitter * torch.eye(x.size(0))
     
         return gpytorch.distributions.MultivariateNormal(mean, covar)
     
@@ -222,7 +223,7 @@ class HadamardGPModel(gpytorch.models.ApproximateGP):
         """
    
         print_freq = 10
-
+        j = 0
         for i in range(n_iter):
             # zero grad all optimizers in optimizer list
             [opt.zero_grad() for opt in optimizer]
@@ -239,6 +240,16 @@ class HadamardGPModel(gpytorch.models.ApproximateGP):
             if use_wandb and i % print_freq == 0:
                 pass 
                 # TODO log to wandb
+            
+            if i > 0:
+                if abs(self.losses[-2] - self.losses[-1]) < 1e-3:
+                    j += 1
+                    if j == 15:
+                        print(f'Early stopping at iteration {i}')
+                        break
+                else:
+                    j = 0
+
     
     def train_minibatch(self,
         n_iter : int,
@@ -250,6 +261,7 @@ class HadamardGPModel(gpytorch.models.ApproximateGP):
     ):
         """
         Fits the model using minibatch variational inference.
+        Minibatch proved to not work well with the Hadamard kernel.
         """
        
         print_freq = 10
@@ -394,3 +406,28 @@ class HadamardGPModel(gpytorch.models.ApproximateGP):
         self.X = self.X.cpu()
         self.y = self.y.cpu()
     
+    def warm_start(self, model_dict):
+        """
+        Warm starts the model with the parameters in model_dict.
+        """
+        try:
+            self.load_state_dict(model_dict)
+            try:
+                # load all parameters except base_variational_strategy variational parameters as they are not compatible
+                # due to mismatch in number of training points              
+                for name, param in model_dict.items():
+                    if 'base_variational_strategy' not in name:
+                        self.state_dict[name].copy_(param)
+            except Exception as e:
+                print(e)
+                
+        except Exception as e:
+            print(e)
+    
+    def posterior(self, x, task_indices):
+        """ 
+        Returns the samples from the posterior distribution of the latent function.
+        """
+
+        
+
