@@ -29,7 +29,7 @@ class PVDataGenerator:
                  n_days : int = 5,
                  minute_interval : int = 5,
                  day_min : int = 8, 
-                 day_max : int = 15,
+                 day_max : int = 16,
                  folder_name : str = 'pv_data',
                  file_name_pv : str = 'pv_data_clean.csv',
                  file_name_location : str = 'location_data_clean.csv',
@@ -137,7 +137,6 @@ class PVDataGenerator:
             return self.time_tensor.cuda(), self.y_tensor.cuda()
         
         return X, y
-
 
 class PVWeatherGenerator:
     """

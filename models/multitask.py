@@ -9,6 +9,7 @@ from gpytorch.variational import (VariationalStrategy,
 from gpytorch.models import ApproximateGP
 from gpytorch.distributions import MultivariateNormal
 from data.utils import store_gp_module_parameters
+from likelihoods import MultitaskBetaLikelihood
 
 class MultitaskGPModel(ApproximateGP):
     def __init__(self,
@@ -17,7 +18,7 @@ class MultitaskGPModel(ApproximateGP):
                  likelihood : gpytorch.likelihoods.Likelihood = None,
                  mean_module : gpytorch.means.Mean = None,
                  covar_module : gpytorch.kernels.Kernel = None,
-                 num_latents : int = 8,
+                 num_latents : int = 4,
                  learn_inducing_locations : bool = False,
                  variational_dist : str = 'cholesky',
                  jitter : float = 1e-6):
@@ -28,9 +29,14 @@ class MultitaskGPModel(ApproximateGP):
 
         num_tasks = y.size(-1)
         
+        if y.max() >= 1:
+            y[y >= 1] = 1 - 1e-6
+        if y.min() <= 0:
+            y[y <= 0] = 1e-6
+
         if variational_dist == 'mean_field':
             variational_distribution = MeanFieldVariationalDistribution(
-                                        num_inducing_points=X.size(0), 
+                                        num_inducing_points=X.size(0)[::2], 
                                         batch_shape=torch.Size([num_latents]),
                                         jitter=jitter
                                     )
@@ -64,11 +70,12 @@ class MultitaskGPModel(ApproximateGP):
         self.likelihood = likelihood
         self.X = X
         self.y = y
+        self.jitter = jitter
         
     def forward(self, x):
     
         mean_x = self.mean_module(x)
-        covar_x = self.covar_module(x)
+        covar_x = self.covar_module(x) 
       
         return MultivariateNormal(mean_x, covar_x)
     
@@ -81,7 +88,7 @@ class MultitaskGPModel(ApproximateGP):
         self.train()
         self.likelihood.train()
 
-        losses = []
+        self.losses = []
 
         if use_wandb:
             wandb.init(
@@ -90,22 +97,32 @@ class MultitaskGPModel(ApproximateGP):
             )
         
         mll = gpytorch.mlls.VariationalELBO(self.likelihood, self, num_data=self.y.size(0))
-        optim = torch.optim.Adam(self.parameters(), lr=lr)
+        
+        params = [p[1] for p in self.named_parameters() if 'likelihood' not in p[0]]
+        likelihood_params = [p[1] for p in self.named_parameters() if 'likelihood' in p[0]]
+        optim = [torch.optim.Adam(params, lr=lr), torch.optim.Adam(likelihood_params, lr=lr)]
         
         print_freq = n_iter // 10
-        
+        self.bad_run = False
+
         for i in range(n_iter):
             
-            optim.zero_grad()
+            [opt.zero_grad() for opt in optim]
             output = self(self.X)
             loss = -mll(output, self.y)
             loss.backward()
-            optim.step()
+            [opt.step() for opt in optim]
 
-            losses.append(loss.item())
+            self.losses.append(loss.item())
             
             if verbose and (i+1) % print_freq == 0:
                 print(f'Iter {i+1}/{n_iter} - Loss: {loss.item()}')
+            
+            # too high beta dispersion break and decrease dispersion
+            if self.losses[-1] > 20 and i > 150:
+                self.bad_run = True
+                print(f'Loss too high at iter {i+1} - Decreasing beta dispersion')
+                break
             
             if use_wandb:
                 log_dict = store_gp_module_parameters(self)
@@ -114,7 +131,7 @@ class MultitaskGPModel(ApproximateGP):
             
             # if loss is not decreasing for 15 iterations, stop training
             if i > 0:
-                if abs(losses[-2] - losses[-1]) < 1e-6:
+                if abs(self.losses[-2] - self.losses[-1]) < 1e-2:
                     j += 1
                     if j == 15:
                         print(f'Early stopping at iter {i+1}')
@@ -124,6 +141,8 @@ class MultitaskGPModel(ApproximateGP):
         
         if use_wandb:
             wandb.finish()
+        
+        
     
     def get_inducing_points(self):
         return self.variational_strategy.base_variational_strategy.inducing_points
@@ -163,7 +182,8 @@ class MultitaskGPModel(ApproximateGP):
     
         """
         assert pred_type in ['dist', 'median', 'mean', 'mode', 'all'], 'pred_type must be one of: dist, median, mean, mode, all'
-    
+        self.eval()
+        self.likelihood.eval()
         if isinstance(self.likelihood, gpytorch.likelihoods.MultitaskGaussianLikelihood):
             with torch.no_grad(), gpytorch.settings.fast_pred_var():
                 dist = self.likelihood(self(x))
@@ -179,7 +199,7 @@ class MultitaskGPModel(ApproximateGP):
                 if pred_type == 'dist':
                     return dist
 
-                samples = dist.sample(sample_shape=torch.Size([30]))
+                samples = dist.sample(sample_shape=torch.Size([100]))
                 lower, upper = self.confidence_region(samples)
 
                 if pred_type == 'median':
@@ -187,7 +207,7 @@ class MultitaskGPModel(ApproximateGP):
                     return median, lower, upper
                 
                 elif pred_type == 'mean':
-                    mean = self.predict_mean()
+                    mean = self.predict_mean(dist)
                     return mean, lower, upper
                 
                 elif pred_type == 'mode':
@@ -203,4 +223,23 @@ class MultitaskGPModel(ApproximateGP):
                     
         else:
             raise NotImplementedError('Likelihood not implemented')
-
+    
+    def warm_start(self, model_dict):
+        """ 
+        Warm start the model with the given model_dict.
+        """
+        try:
+            self.load_state_dict(model_dict)
+            try:
+                # load all parameters except base_variational_strategy variational parameters as they are not compatible
+                # due to mismatch in number of training points              
+                for name, param in model_dict.items():
+                    if 'base_variational_strategy' not in name:
+                        self.state_dict[name].copy_(param)
+            except Exception as e:
+                print(e)
+                
+                print('Could not load all parameters')
+        except Exception as e:
+            print(e)
+            print('Could not load state dict')

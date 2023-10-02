@@ -818,3 +818,22 @@ def check_model_inputs(x_train, y_train, x_test, y_test):
     
     return x_train, y_train, x_test, y_test
 
+def print_lfm_param_table(lfm, dataset):
+    """ 
+    Prints a table of the true parameters and the learned parameters.
+    Gives a column format for the params a b c.
+    
+    """
+    true_params = dataset.true_params
+    learned_params = lfm.params
+
+    # --- * N + Parameters in the middle
+    print('-' * 50)
+    # centered header
+    print('| Parameter  \t | True \t |  Learned \t |')
+    for (name, val), pred in zip(true_params.items(), learned_params.values()):
+        print('-' * 50)
+        print(f'|  {name} \t\t |  {val:.3f} \t | {pred:.3f} \t |')
+    print('-' * 50)
+    
+

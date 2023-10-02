@@ -60,7 +60,7 @@ class SyntheticPV:
         t = torch.linspace(0, self.end_time, discretisation_length(self.time_steps, self.num_discrete))
         X0 = torch.tensor([self.pv_init, self.cloud_init])
         X = odeint(dX_dt, X0, t, method='rk4', options=dict(step_size=5e-2))
-        X += torch.randn_like(X) * 0.1
+        X += torch.randn_like(X) * 0.05
        
 
         self.true_params = {'a': a, 'b': b, 'c': c}

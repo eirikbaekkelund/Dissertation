@@ -8,7 +8,7 @@ from data.utils import get_hourly_points, get_daily_points
 class Persistence():
 
     def predict(self, y, n_steps):
-        y_pred = np.zeros((n_steps, y.shape[1]))
+        y_pred = np.zeros((n_steps, y.shape[1])) if len(y.shape) > 1 else np.zeros(n_steps)
         y_pred[:] = y[-1]
         return y_pred
 

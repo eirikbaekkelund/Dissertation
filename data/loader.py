@@ -139,7 +139,8 @@ class SystemLoader(Dataset):
             x_cols : Optional[list] =['global_rad:W', 
                                       'diffuse_rad:W', 
                                       'effective_cloud_cover:octas',
-                                      'relative_humidity_2m:p', 't_2m:C'],
+                                      'relative_humidity_2m:p', 't_2m:C',
+                                      'wind_speed_10m:ms'],
             season : Optional[str] = None,
             n_hours_pred : int = 6
     ):
@@ -194,6 +195,11 @@ class SystemLoader(Dataset):
         t = self.tasks[self.tasks == i][self.start:self.end]
         y = self.y[self.tasks == i][self.start:self.end]
 
+        if y.max() >= 1:
+            y[y >= 1] = 1 - 1e-6
+        if y.min() <= 0:
+            y[y <= 0] = 1e-6
+
         return x.float(), y, t
 
     def train_test_split_region(self):
@@ -206,7 +212,7 @@ class SystemLoader(Dataset):
 
         # get a random hour between 8 and 14
         hour = np.random.randint(8, 16 - self.n_hours_pred)
-        
+        self.hour = hour
         for i in range(self.n_systems):
             x, y, t = self.slice_data(i)
            
@@ -220,13 +226,13 @@ class SystemLoader(Dataset):
             task_train, task_test = t[:n_tr], t[n_tr:n_tr+n_te]
 
             # run savgol filter on input data except time dimension
-            x_train[:, :-1] = torch.tensor(savgol_filter(x_train[:, :-1], 
+            if len(x_train) > 12:
+                x_train[:, :-1] = torch.tensor(savgol_filter(x_train[:, :-1], 
+                                                    window_length=12, polyorder=3, axis=0), 
+                                                dtype=torch.float32)
+                x_test[:, :-1] = torch.tensor(savgol_filter(x_test[:, :-1], 
                                                 window_length=12, polyorder=3, axis=0), 
                                             dtype=torch.float32)
-            x_test[:, :-1] = torch.tensor(savgol_filter(x_test[:, :-1], 
-                                            window_length=12, polyorder=3, axis=0), 
-                                        dtype=torch.float32)
-
             X_train.append(x_train)
             Y_train.append(y_train)
             T_train.append(task_train)

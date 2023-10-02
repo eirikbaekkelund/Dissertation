@@ -21,6 +21,9 @@ def fit_bayesian_ridge(x_train, y_train, x_test):
     y_pred, std = brr.predict(x_test, return_std=True)
     var = std**2
     y_pred = np.clip(y_pred, 0, 1)
+    # where y_pred - 2*std < 0, set variance so that y - 2*std = 0
+    var[y_pred - 2*std < 0] = y_pred[y_pred - 2*std < 0] / 2
+    var[y_pred + 2*std > 1] = (1 - y_pred[y_pred + 2*std > 1]) 
     return y_pred, var
 
 def fit_xgboost(x_train, 
